@@ -9,12 +9,14 @@
 <meta name="apple-mobile-web-app-title" content="Habits"/>
 <title>⏰ Habit Tracker</title>
 <link rel="manifest" href="./manifest.json"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <style>
   :root{
     --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;
     --accent:#00ff88;--warn:#ffaa00;--danger:#ff4466;
     --text:#e8e8f0;--muted:#555570;--border:#22223a;--radius:14px;
-    --font-display:system-ui,-apple-system,'Segoe UI',sans-serif;--font-mono:ui-monospace,'SF Mono','Cascadia Mono','Segoe UI Mono',monospace;
+    --font-display:'Syne',sans-serif;--font-mono:'JetBrains Mono',monospace;
   }
   /* Light theme override */
   [data-theme="light"]{
@@ -224,25 +226,6 @@
   .add-sched-sheet input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:10px;transition:border-color .15s}
   .add-sched-sheet input:focus{border-color:var(--accent)}
   .add-sched-sheet input::placeholder{color:var(--muted)}
-
-  /* ── TIME PICKER ── */
-  .time-picker-wrap{display:flex;gap:6px;align-items:center;justify-content:center;padding:8px 0}
-  .time-drum-col{display:flex;flex-direction:column;align-items:center;gap:4px}
-  .time-drum-label{font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px}
-  .time-drum{height:140px;width:64px;overflow:hidden;position:relative;border-radius:10px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;user-select:none;-webkit-overflow-scrolling:touch}
-  .time-drum-inner{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column;align-items:center}
-  .time-drum-item{height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--muted);transition:color .15s,transform .1s;flex-shrink:0;width:100%}
-  .time-drum-item.selected{color:var(--text);transform:scale(1.1)}
-  .time-drum::before,.time-drum::after{content:'';position:absolute;left:0;right:0;height:42px;z-index:2;pointer-events:none}
-  .time-drum::before{top:0;background:linear-gradient(to bottom,var(--bg3),transparent)}
-  .time-drum::after{bottom:0;background:linear-gradient(to top,var(--bg3),transparent)}
-  .time-drum-highlight{position:absolute;top:50%;left:0;right:0;height:44px;transform:translateY(-50%);border-top:1px solid var(--accent);border-bottom:1px solid var(--accent);pointer-events:none;opacity:.4;z-index:1}
-  .time-colon{font-size:22px;font-weight:800;font-family:var(--font-mono);color:var(--text);padding-bottom:4px}
-  .ampm-drum{width:52px}
-  .ampm-drum .time-drum-item{font-size:14px}
-  /* Schedule edit click-to-edit */
-  .sched-tab-item.edit-clickable{cursor:pointer}
-  .sched-tab-item.edit-clickable:active{background:var(--bg3)}
 </style>
 </head>
 <body>
@@ -1332,14 +1315,12 @@ function renderScheduleTab(editMode) {
       const isCur = i === cur, isPast = t < now && !isCur;
 
       if (editMode) {
-        html += `<div class="sched-tab-item edit-clickable ${isCur ? 'current' : ''} ${isPast ? 'past' : ''}" data-edit-idx="${i}" style="cursor:pointer">
-          <button class="sched-tab-del" data-idx="${i}" title="Delete" style="flex-shrink:0">✕</button>
-          <div class="sched-tab-time-block">
-            <span class="sched-tab-time">${item.time}</span>
+        html += `<div class="sched-edit-row" data-idx="${i}">
+          <button class="sched-tab-del" data-idx="${i}" title="Delete">✕</button>
+          <div class="sched-edit-fields">
+            <input class="sched-edit-time" data-idx="${i}" value="${item.time.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="9:00 AM" autocomplete="off" spellcheck="false"/>
+            <input class="sched-edit-act" data-idx="${i}" value="${item.activity.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="Activity" autocomplete="off"/>
           </div>
-          <div class="sched-tab-divider"></div>
-          <span class="sched-tab-act">${item.activity}</span>
-          <span style="font-size:11px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">✎</span>
         </div>`;
       } else {
         html += `<div class="sched-tab-item ${isCur ? 'current' : ''} ${isPast ? 'past' : ''}">
@@ -1362,17 +1343,42 @@ function renderScheduleTab(editMode) {
     return;
   }
 
-  // ── Edit mode: each item opens an edit popup on click ──
+  // ── Edit mode: wire up fields ──
 
-  // flushAllEdits is now a no-op since we use popups (data is committed immediately)
-  function flushAllEdits() {}
+  // Flush ALL current field values into S.config immediately (before any re-render)
+  function flushAllEdits() {
+    el.querySelectorAll('.sched-edit-time').forEach(inp => {
+      const idx = parseInt(inp.dataset.idx);
+      const actEl = el.querySelector(`.sched-edit-act[data-idx="${idx}"]`);
+      const t = inp.value.trim(), a = actEl?.value.trim() || '';
+      if (t && a && S.config?.schedule[idx]) {
+        S.config.schedule[idx] = { time: t, activity: a };
+      }
+    });
+    LS.set('lastConfig', S.config);
+  }
 
-  // Delete button
+  // Save on every keystroke so nothing is lost
+  el.querySelectorAll('.sched-edit-time, .sched-edit-act').forEach(input => {
+    input.addEventListener('input', () => {
+      const idx = parseInt(input.dataset.idx);
+      const timeEl = el.querySelector(`.sched-edit-time[data-idx="${idx}"]`);
+      const actEl = el.querySelector(`.sched-edit-act[data-idx="${idx}"]`);
+      if (!timeEl || !actEl) return;
+      const t = timeEl.value.trim(), a = actEl.value.trim();
+      if (t && a && S.config?.schedule[idx]) {
+        S.config.schedule[idx] = { time: t, activity: a };
+        LS.set('lastConfig', S.config);
+      }
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  });
+
+  // Delete button — flush first, then splice
   el.querySelectorAll('.sched-tab-del').forEach(b => {
-    b.addEventListener('click', e => {
-      e.stopPropagation();
+    b.addEventListener('click', () => {
+      flushAllEdits();
       const idx = parseInt(b.dataset.idx);
-      if (!confirm('Delete this entry?')) return;
       S.config.schedule.splice(idx, 1);
       LS.set('lastConfig', S.config);
       saveScheduleToVault();
@@ -1380,178 +1386,43 @@ function renderScheduleTab(editMode) {
       renderScheduleTab(true);
     });
   });
-
-  // Click item to edit
-  el.querySelectorAll('[data-edit-idx]').forEach(item => {
-    item.addEventListener('click', e => {
-      if (e.target.classList.contains('sched-tab-del')) return;
-      const idx = parseInt(item.dataset.editIdx);
-      const entry = S.config?.schedule[idx];
-      if (!entry) return;
-      showAddScheduleSheet(
-        () => renderScheduleTab(true),
-        entry.time,
-        entry.activity,
-        idx
-      );
-    });
-  });
-
-// ── SCROLLABLE TIME PICKER ────────────────────────────────────────────────────
-function createTimePicker(initialTime) {
-  // Parse initial time like "9:30 AM"
-  let initH = 9, initM = 0, initAmPm = 'AM';
-  if (initialTime) {
-    const m = initialTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (m) { initH = parseInt(m[1]); initM = parseInt(m[2]); initAmPm = m[3].toUpperCase(); }
-  }
-  if (initH === 0) { initH = 12; initAmPm = 'AM'; }
-  else if (initH === 12) initAmPm = initAmPm || 'PM';
-  else if (initH > 12) { initH -= 12; initAmPm = 'PM'; }
-
-  const hours = Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'));
-  const mins = Array.from({length:60},(_,i)=>String(i).padStart(2,'0'));
-  const ampm = ['AM','PM'];
-
-  const wrap = document.createElement('div');
-  wrap.className = 'time-picker-wrap';
-  wrap.innerHTML = `
-    <div class="time-drum-col">
-      <div class="time-drum-label">Hour</div>
-      <div class="time-drum" id="tp-hour">
-        <div class="time-drum-highlight"></div>
-        <div class="time-drum-inner" id="tp-hour-inner"></div>
-      </div>
-    </div>
-    <div class="time-colon" style="margin-top:24px">:</div>
-    <div class="time-drum-col">
-      <div class="time-drum-label">Min</div>
-      <div class="time-drum" id="tp-min">
-        <div class="time-drum-highlight"></div>
-        <div class="time-drum-inner" id="tp-min-inner"></div>
-      </div>
-    </div>
-    <div class="time-drum-col" style="margin-left:4px">
-      <div class="time-drum-label">AM/PM</div>
-      <div class="time-drum ampm-drum" id="tp-ampm">
-        <div class="time-drum-highlight"></div>
-        <div class="time-drum-inner" id="tp-ampm-inner"></div>
-      </div>
-    </div>`;
-
-  // Build drum items
-  function buildDrum(innerId, items, selectedVal, padTop=true) {
-    const inner = wrap.querySelector('#'+innerId);
-    // Padding items for centering
-    const ph = document.createElement('div');
-    ph.className='time-drum-item'; ph.style.height='48px'; ph.innerHTML='&nbsp;';
-    if (padTop) inner.appendChild(ph.cloneNode(true));
-    items.forEach(val => {
-      const el = document.createElement('div');
-      el.className = 'time-drum-item' + (val === selectedVal ? ' selected' : '');
-      el.dataset.val = val;
-      el.textContent = val;
-      inner.appendChild(el);
-    });
-    if (padTop) inner.appendChild(ph.cloneNode(true));
-  }
-
-  buildDrum('tp-hour-inner', hours, String(initH).padStart(2,'0'));
-  buildDrum('tp-min-inner', mins, String(initM).padStart(2,'0'));
-  buildDrum('tp-ampm-inner', ampm, initAmPm);
-
-  // Scroll drum to selected
-  function scrollToSelected(drumId) {
-    const drum = wrap.querySelector('#'+drumId);
-    const inner = drum.querySelector('.time-drum-inner');
-    const sel = inner.querySelector('.selected');
-    if (!sel) return;
-    const idx = Array.from(inner.children).indexOf(sel) - 1; // -1 for pad
-    drum.scrollTop = idx * 44;
-  }
-
-  // Snap on scroll end — select item closest to center
-  function setupDrum(drumId) {
-    const drum = wrap.querySelector('#'+drumId);
-    const inner = drum.querySelector('.time-drum-inner');
-    let scrollTimer;
-    const ITEM_H = 44;
-
-    const onScroll = () => {
-      clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => {
-        const idx = Math.round(drum.scrollTop / ITEM_H);
-        const items = inner.querySelectorAll('.time-drum-item[data-val]');
-        const clamped = Math.max(0, Math.min(items.length-1, idx));
-        const scrollTarget = clamped * ITEM_H;
-        drum.scrollTo({ top: scrollTarget, behavior: 'smooth' });
-        items.forEach(i => i.classList.remove('selected'));
-        items[clamped]?.classList.add('selected');
-      }, 80);
-    };
-    drum.addEventListener('scroll', onScroll, { passive: true });
-    setTimeout(() => scrollToSelected(drumId), 30);
-  }
-
-  setupDrum('tp-hour'); setupDrum('tp-min'); setupDrum('tp-ampm');
-
-  wrap.getValue = () => {
-    const h = wrap.querySelector('#tp-hour-inner .selected')?.dataset.val || '09';
-    const m = wrap.querySelector('#tp-min-inner .selected')?.dataset.val || '00';
-    const ap = wrap.querySelector('#tp-ampm-inner .selected')?.dataset.val || 'AM';
-    return `${parseInt(h)}:${m} ${ap}`;
-  };
-
-  return wrap;
 }
 
 // ── ADD SCHEDULE ENTRY SHEET ───────────────────────────────────────────────
-function showAddScheduleSheet(onDone, prefillTime, prefillAct, editIdx) {
-  const isEdit = editIdx !== undefined;
+function showAddScheduleSheet(onDone) {
   const ov = document.createElement('div');
   ov.className = 'add-sched-modal';
-  ov.innerHTML = `<div class="add-sched-sheet" style="max-height:92dvh;overflow-y:auto">
+  ov.innerHTML = `<div class="add-sched-sheet">
     <div class="modal-handle"></div>
-    <div style="font-size:16px;font-weight:800;margin-bottom:16px">${isEdit ? 'Edit Entry' : 'Add Schedule Entry'}</div>
-    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Time</div>
-    <div id="as-time-picker"></div>
-    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:14px;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Activity</div>
-    <input type="text" id="as-act" placeholder="Activity description" autocomplete="off" value="${(prefillAct||'').replace(/"/g,'&quot;')}"/>
+    <div style="font-size:16px;font-weight:800;margin-bottom:16px">Add Schedule Entry</div>
+    <input type="text" id="as-time" placeholder="Time — e.g. 9:00 AM" autocomplete="off" spellcheck="false"/>
+    <input type="text" id="as-act" placeholder="Activity description" autocomplete="off"/>
     <div style="display:flex;gap:10px;margin-top:4px">
       <button class="btn btn-ghost" id="as-cancel" style="flex:1">Cancel</button>
-      <button class="btn btn-green" id="as-add" style="flex:2">${isEdit ? '✓ Save' : '+ Add'}</button>
+      <button class="btn btn-green" id="as-add" style="flex:2">+ Add</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
-
-  const timePicker = createTimePicker(prefillTime || '9:00 AM');
-  ov.querySelector('#as-time-picker').appendChild(timePicker);
-
+  const timeIn = ov.querySelector('#as-time');
   const actIn = ov.querySelector('#as-act');
-  setTimeout(() => actIn.focus(), 300);
-
+  setTimeout(() => timeIn.focus(), 100);
   const close = () => document.body.removeChild(ov);
   ov.querySelector('#as-cancel').addEventListener('click', close);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
-
   ov.querySelector('#as-add').addEventListener('click', () => {
-    const t = timePicker.getValue();
-    const a = actIn.value.trim();
-    if (!a) { showToast('Enter an activity description'); return; }
+    const t = timeIn.value.trim(), a = actIn.value.trim();
+    if (!t || !a) { showToast('Fill in both fields'); return; }
     if (!S.config) S.config = { schedule: [], habitDefinitions: {}, habitTracker: { enabled: true, snoozeOptions: [5, 10] } };
-    if (isEdit) {
-      S.config.schedule[editIdx] = { time: t, activity: a };
-    } else {
-      S.config.schedule.push({ time: t, activity: a });
-    }
+    S.config.schedule.push({ time: t, activity: a });
     try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
     LS.set('lastConfig', S.config);
     saveScheduleToVault();
     forceSwUpdate();
     close();
     onDone();
-    showToast(isEdit ? '✓ Entry updated' : '✓ Entry added');
+    showToast('✓ Entry added');
   });
+  // Enter on activity field submits
   actIn.addEventListener('keydown', e => { if (e.key === 'Enter') ov.querySelector('#as-add').click(); });
 }
 
@@ -2199,9 +2070,17 @@ function buildSkeleton() {
 
   fab.addEventListener('click', () => {
     if (editMode) {
-      // No inline inputs to flush — edits committed via popup
-      try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
-      LS.set('lastConfig', S.config);
+      const el = document.getElementById('schedule-tab');
+      if (el) {
+        el.querySelectorAll('.sched-edit-time').forEach(inp => {
+          const idx = parseInt(inp.dataset.idx);
+          const actEl = el.querySelector(`.sched-edit-act[data-idx="${idx}"]`);
+          const t = inp.value.trim(), a = actEl?.value.trim() || '';
+          if (t && a && S.config?.schedule[idx]) S.config.schedule[idx] = { time: t, activity: a };
+        });
+        try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
+        LS.set('lastConfig', S.config);
+      }
       commitEdits(true);
       editMode = false;
       fab.innerHTML = 'Edit'; fab.title = 'Edit schedule';
@@ -2228,8 +2107,17 @@ function buildSkeleton() {
     }
     // Auto-commit schedule edits when leaving schedule tab
     if (activeTab === 1 && editMode) {
-      try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
-      LS.set('lastConfig', S.config);
+      const el = document.getElementById('schedule-tab');
+      if (el) {
+        el.querySelectorAll('.sched-edit-time').forEach(inp => {
+          const idx2 = parseInt(inp.dataset.idx);
+          const actEl = el.querySelector(`.sched-edit-act[data-idx="${idx2}"]`);
+          const t = inp.value.trim(), a = actEl?.value.trim() || '';
+          if (t && a && S.config?.schedule[idx2]) S.config.schedule[idx2] = { time: t, activity: a };
+        });
+        try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
+        LS.set('lastConfig', S.config);
+      }
       commitEdits(false);
       editMode = false;
       fab.innerHTML = 'Edit';
@@ -2296,133 +2184,43 @@ function startTimers() {
 }
 
 async function fetchNepaliDate() {
-  // Full Bikram Sambat calendar — data covers BS 2000–2099 (AD ~1943–2042)
-  // and beyond via extended table, giving reliable results for 100+ years.
+  // Pure JS Nepali date conversion (BS) — works fully offline
+  // Uses the Bikram Sambat calendar algorithm
   try {
-    // Month lengths for each BS year (12 values: Baishakh..Chaitra)
-    const BS_DATA = {
-      2000:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2001:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2002:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2003:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2004:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2005:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2006:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2007:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2008:[31,31,31,32,31,31,29,30,30,29,29,31],
-      2009:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2010:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2011:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2012:[31,31,31,32,31,31,29,30,30,29,30,30],
-      2013:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2014:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2015:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2016:[31,31,31,32,31,31,29,30,30,29,30,30],
-      2017:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2018:[31,32,31,32,31,30,30,29,30,29,30,30],
-      2019:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2020:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2021:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2022:[31,32,31,32,31,30,30,30,29,29,30,30],
-      2023:[31,32,31,32,31,30,30,30,29,30,29,31],
-      2024:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2025:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2026:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2027:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2028:[31,31,32,31,31,30,30,30,29,30,29,31],
-      2029:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2030:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2031:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2032:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2033:[31,31,32,31,31,30,30,30,29,30,29,31],
-      2034:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2035:[31,32,31,32,31,30,30,29,30,29,30,30],
-      2036:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2037:[31,31,31,32,31,31,29,30,30,29,30,30],
-      2038:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2039:[31,31,32,32,31,30,30,29,30,29,30,30],
-      2040:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2041:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2042:[31,31,32,31,31,30,30,30,29,30,29,31],
-      2043:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2044:[31,32,31,32,31,30,30,29,30,29,30,30],
-      2045:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2046:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2047:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2048:[31,32,31,32,31,30,30,29,30,29,30,29],
-      2049:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2050:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2051:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2052:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2053:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2054:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2055:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2056:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2057:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2058:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2059:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2060:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2061:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2062:[31,32,31,32,31,30,30,30,29,29,30,30],
-      2063:[31,32,31,32,31,30,30,30,29,30,29,31],
-      2064:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2065:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2066:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2067:[30,32,31,32,31,30,30,30,29,30,29,31],
-      2068:[31,31,32,31,31,30,30,30,29,30,29,31],
-      2069:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2070:[31,32,31,32,31,30,30,29,30,29,30,30],
-      2071:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2072:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2073:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2074:[31,32,31,32,31,30,30,30,29,29,30,30],
-      2075:[31,32,31,32,31,30,30,30,29,30,29,31],
-      2076:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2077:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2078:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2079:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2080:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2081:[31,32,31,32,31,30,30,30,29,29,30,30],
-      2082:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2083:[31,31,31,32,31,31,29,30,30,29,30,30],
-      2084:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2085:[31,32,31,32,30,31,30,29,30,29,30,30],
-      2086:[30,32,31,32,31,30,30,30,29,29,30,31],
-      2087:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2088:[31,32,31,32,31,30,30,29,30,29,30,30],
-      2089:[31,32,31,32,31,30,30,30,29,29,30,30],
-      2090:[31,32,31,32,31,30,30,30,29,30,29,31],
-      2091:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2092:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2093:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2094:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2095:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2096:[31,32,31,32,31,30,30,30,29,29,30,31],
-      2097:[31,31,31,32,31,31,30,29,30,29,30,30],
-      2098:[31,31,32,31,31,31,30,29,30,29,30,30],
-      2099:[31,32,31,32,31,30,30,30,29,29,30,30],
-    };
-    const BS_MONTHS = ['Baishakh','Jestha','Ashadh','Shrawan','Bhadra','Ashwin','Kartik','Mangsir','Poush','Magh','Falgun','Chaitra'];
-    // Anchor: BS 2000/01/01 = AD 1943/04/14
-    const ANCHOR_AD = new Date(1943, 3, 14);
-    const ANCHOR_BS_YEAR = 2000;
-
     const now = new Date();
-    const diffDays = Math.floor((now - ANCHOR_AD) / 86400000);
+    const yy = now.getFullYear(), mm = now.getMonth() + 1, dd = now.getDate();
+
+    // BS year data: [days in each month] for BS years 2000-2089
+    // Each entry: total days in that BS year's months
+    const bsData = {
+      2082: [31,32,31,32,31,30,30,30,29,29,30,31],
+      2083: [31,31,32,31,31,30,30,30,29,30,30,30],
+      2084: [31,31,32,31,31,30,30,30,29,30,30,30],
+      2085: [31,32,31,32,30,31,30,29,30,29,30,30],
+    };
+    const bsMonths = ['Baishakh','Jestha','Ashadh','Shrawan','Bhadra','Ashwin','Kartik','Mangsir','Poush','Magh','Falgun','Chaitra'];
+
+    // Known anchor: 2082 Baishakh 1 = 2025 April 14
+    const anchor = new Date(2025, 3, 14); // April 14, 2025 = 2082/01/01
+    const diffDays = Math.floor((now - anchor) / 86400000);
+
+    let bsYear = 2082, bsMonth = 1, bsDay = 1;
     let remaining = diffDays;
-    let bsYear = ANCHOR_BS_YEAR, bsMonth = 0, bsDay = 0;
 
     outer:
-    for (let y = ANCHOR_BS_YEAR; y <= 2099; y++) {
-      const months = BS_DATA[y] || [31,31,32,31,31,31,30,29,30,29,30,30];
+    for (let y = 2082; y <= 2090; y++) {
+      const months = bsData[y] || [31,31,32,31,31,31,30,30,29,29,30,30];
       for (let m = 0; m < 12; m++) {
-        const dim = months[m];
-        if (remaining < dim) { bsYear = y; bsMonth = m + 1; bsDay = remaining + 1; break outer; }
-        remaining -= dim;
+        const daysInMonth = months[m];
+        if (remaining < daysInMonth) {
+          bsYear = y; bsMonth = m + 1; bsDay = 1 + remaining;
+          break outer;
+        }
+        remaining -= daysInMonth;
       }
     }
-    if (!bsDay) return null;
-    return `${BS_MONTHS[bsMonth - 1]} ${bsDay}, ${bsYear}`;
+
+    return `${bsMonths[bsMonth - 1]} ${bsDay}, ${bsYear}`;
   } catch { return null; }
 }
 
@@ -2466,20 +2264,10 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     const swReg = await navigator.serviceWorker.register('./sw.js').catch(console.error);
     // Once controller is available, start keep-alive and sync alarms
-    const kickSW = async () => {
+    const kickSW = () => {
       if (navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: 'START_KEEPALIVE' });
         syncAlarmsToSW();
-        // Register periodic background sync for closed-app alarms
-        try {
-          const reg2 = await navigator.serviceWorker.getRegistration();
-          if (reg2 && 'periodicSync' in reg2) {
-            const state = await navigator.permissions.query({ name: 'periodic-background-sync' });
-            if (state.state === 'granted') {
-              await reg2.periodicSync.register('check-alarms', { minInterval: 60000 });
-            }
-          }
-        } catch {}
       }
     };
     if (navigator.serviceWorker.controller) {

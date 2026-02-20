@@ -1,5 +1,5 @@
-const CACHE_NAME = 'habit-tracker-v11';
-const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
+const CACHE_NAME = 'habit-tracker-v9';
+const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 // ── INSTALL / ACTIVATE / FETCH (unchanged) ──────────────────────────────────
 self.addEventListener('install', e => {
@@ -8,16 +8,12 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
-    await self.clients.claim();
-    startKeepAlive();
-    // Register periodic background sync for alarm checks (Android Chrome)
-    try {
-      await self.registration.periodicSync.register('check-alarms', { minInterval: 60000 });
-    } catch {}
-  })());
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+  ));
+  self.clients.claim();
+  // Start keep-alive as soon as SW activates
+  startKeepAlive();
 });
 
 self.addEventListener('fetch', e => {
@@ -181,19 +177,6 @@ function setSnoozeTimer(tag, delay, title, body, actions) {
   }, delay);
 }
 
-
-// ── PERIODIC BACKGROUND SYNC ─────────────────────────────────────────────────
-// Fires periodically by the browser even when app is closed (Chrome Android)
-self.addEventListener('periodicsync', e => {
-  if (e.tag === 'check-alarms') {
-    e.waitUntil(checkDueAlarms());
-  }
-});
-
-// ── PUSH EVENT (backup for when SW wakes from push) ───────────────────────────
-self.addEventListener('push', e => {
-  e.waitUntil(checkDueAlarms());
-});
 
 self.addEventListener('message', e => {
   if (!e.data) return;
