@@ -1813,10 +1813,9 @@ async function restoreLogTemplateHandle() {
     const fh = await IDB.get('logTemplateHandle');
     if (!fh) return;
     let perm;
-    try { perm = await fh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm === 'granted') { S.logTemplateHandle = fh; return; }
-    // store pending so reconnect banner can re-request
-    S._pendingLogHandle = fh;
+    try { perm = await fh.queryPermission({ mode: 'read' }); } catch { return; }
+    // Store handle regardless — permission will be re-requested on first use (inside click handler)
+    S.logTemplateHandle = fh;
   } catch {}
 }
 
@@ -1838,13 +1837,9 @@ async function restoreLogOutputHandle() {
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
-    let perm;
-    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm === 'granted') {
-      S.logOutputDirHandle = dh;
-    } else {
-      S._pendingLogOutputHandle = dh;
-    }
+    try { await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    // Store handle regardless — permission will be re-requested on first use (inside click handler)
+    S.logOutputDirHandle = dh;
   } catch {}
 }
 
@@ -3299,6 +3294,10 @@ async function boot() {
     showReconnectBanner();
   }
   // No vault = fine, app works from localStorage. User connects via Settings.
+
+  // Restore log template + output folder (saved to IDB, auto-reconnect if permission still held)
+  await restoreLogTemplateHandle();
+  await restoreLogOutputHandle();
 
   if (Notification.permission==='default')
     setTimeout(()=>Notification.requestPermission().then(p=>{ S.notifPermission=p; showBatteryBanner(); }), 2000);
