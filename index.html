@@ -360,36 +360,23 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
-
-    // First check if already granted (no prompt needed)
+    // Silent check only — never call requestPermission here (no user gesture at boot)
     const perm = await dh.queryPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       return 'granted';
     }
-
-    // Try to silently request permission — this succeeds in some browsers
-    // when the PWA was recently used and the handle is fresh
-    try {
-      const reqPerm = await dh.requestPermission({ mode: 'readwrite' });
-      if (reqPerm === 'granted') {
-        S.vaultDirHandle = dh;
-        return 'granted';
-      }
-    } catch {
-      // requestPermission requires a user gesture in strict browsers — fall through to banner
-    }
-
+    // Store handle so reconnect banner can use it
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
 }
 
 async function reconnectVault() {
-  const dh = S._pendingHandle;
+  const dh = S._pendingHandle || await IDB.get('vaultHandle').catch(()=>null);
   if (!dh) { await pickVaultFolder(); return !!S.vaultDirHandle; }
   try {
-    const perm = await dh.requestPermission({ mode:'readwrite' });
+    const perm = await dh.requestPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       S._pendingHandle = null;
@@ -412,6 +399,8 @@ async function getDataDir() {
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
 async function loadFromVault() {
   if (!S.vaultDirHandle) return;
+  LS.del('lastConfig');
+  LS.del('lastScheduleEdit');
   await loadTemplate();
   await loadHabitDataFromFile();
 }
@@ -420,7 +409,7 @@ async function loadTemplate() {
   if (!S.vaultDirHandle) return false;
   try {
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
+      if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const text = await file.text();
         const cfg = parseMd(text);
@@ -505,7 +494,7 @@ function parseMd(text) {
   try {
     const yaml = fm[1];
     const schedule = [];
-    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^\w)/m);
+    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^[a-zA-Z]\w*:)/m);
     if (sm) {
       let cur = null;
       for (const line of sm[1].split('\n')) {
@@ -516,7 +505,7 @@ function parseMd(text) {
       }
     }
     const habitDefinitions = {};
-    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^\w)/m);
+    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^[a-zA-Z]\w*:)/m);
     if (hm) {
       for (const block of hm[1].split(/\n(?=  \w)/)) {
         const km = block.match(/^\s{2}(\w+):/);
@@ -929,7 +918,7 @@ async function saveHabitDefinitionsToVault() {
   if (!S.vaultDirHandle || !S.config) return;
   try {
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
         const newText = rebuildHabitDefsInMd(originalText, S.config.habitDefinitions || {});
@@ -1435,7 +1424,7 @@ async function saveScheduleToVault() {
   try {
     // Find the config .md file
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
 
@@ -2325,9 +2314,14 @@ async function boot() {
   }
 
   document.getElementById('btn-reload').addEventListener('click', async()=>{
-    if (S.vaultDirHandle) { await loadFromVault(); renderAll(); showToast('Reloaded'); }
-    else if (S._pendingHandle) { showReconnectBanner(); }
-    else { showFirstRunSetup(); }
+    if (S.vaultDirHandle) {
+      await loadFromVault(); renderAll(); showToast('Reloaded');
+    } else {
+      // Use this user gesture to request permission
+      const ok = await reconnectVault();
+      if (ok) { await loadFromVault(); renderAll(); showToast('✓ Reloaded'); }
+      else { showFirstRunSetup(); }
+    }
   });
   document.getElementById('btn-settings').addEventListener('click', showSettings);
 
