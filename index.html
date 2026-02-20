@@ -223,7 +223,7 @@
   /* Add modal */
   .add-sched-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease}
   .add-sched-sheet{background:var(--bg2);border:1px solid var(--border);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));animation:slideUp .3s cubic-bezier(.34,1.56,.64,1)}
-  .add-sched-sheet input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:10px;transition:border-color .15s}
+  .add-sched-sheet input,.sched-edit-sheet input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:10px;transition:border-color .15s}
   .add-sched-sheet input:focus{border-color:var(--accent)}
   .add-sched-sheet input::placeholder{color:var(--muted)}
 
@@ -1034,7 +1034,6 @@ function showAddHabitSheet() {
 
     <div id="ah-incr-fields">
       <input type="number" id="ah-max" placeholder="Daily goal — e.g. 8" min="1" max="200"/>
-      <input type="number" id="ah-incr" placeholder="Count per tap — e.g. 1" min="1" max="50"/>
     </div>
 
     <div id="ah-choice-fields" style="display:none">
@@ -1114,8 +1113,7 @@ function showAddHabitSheet() {
 
     if (habitType === 'incremental') {
       const maxVal = parseInt(ov.querySelector('#ah-max').value) || 1;
-      const incrVal = parseInt(ov.querySelector('#ah-incr').value) || 1;
-      S.config.habitDefinitions[rawKey] = { type: 'incremental', icon, maxValue: maxVal, increment: incrVal, messages: {} };
+      S.config.habitDefinitions[rawKey] = { type: 'incremental', icon, maxValue: maxVal, increment: 1, messages: {} };
     } else {
       const rows = choicesList.querySelectorAll('[data-choice-idx]');
       const choices = [];
@@ -1156,7 +1154,6 @@ function showEditHabitSheet(key) {
 
     <div id="ah-incr-fields" style="${existingCfg.type==='choice'?'display:none':''}">
       <input type="number" id="ah-max" placeholder="Daily goal — e.g. 8" min="1" max="200" value="${existingCfg.maxValue||''}"/>
-      <input type="number" id="ah-incr" placeholder="Count per tap — e.g. 1" min="1" max="50" value="${existingCfg.increment||''}"/>
     </div>
 
     <div id="ah-choice-fields" style="${existingCfg.type==='incremental'?'display:none':''}">
@@ -1238,8 +1235,7 @@ function showEditHabitSheet(key) {
 
     if (habitType === 'incremental') {
       const maxVal = parseInt(ov.querySelector('#ah-max').value) || 1;
-      const incrVal = parseInt(ov.querySelector('#ah-incr').value) || 1;
-      S.config.habitDefinitions[newKey] = { type: 'incremental', icon, maxValue: maxVal, increment: incrVal, messages: existingCfg.messages||{} };
+      S.config.habitDefinitions[newKey] = { type: 'incremental', icon, maxValue: maxVal, increment: 1, messages: existingCfg.messages||{} };
     } else {
       const rows = choicesList.querySelectorAll('[data-choice-idx]');
       const choices = [];
@@ -1610,7 +1606,7 @@ async function saveScheduleToVault() {
 async function writeScheduleBackup(originalText, sourceFilename) {
   try {
     // Get or create vault/backup/ directory
-    const backupDir = await S.vaultDirHandle.getDirectoryHandle('backup', { create: true });
+    const backupDir = await S.vaultDirHandle.getDirectoryHandle('_backup', { create: true });
 
     // Collect existing schedule backup files, sorted oldest-first
     const existing = [];
@@ -1679,7 +1675,7 @@ async function showVaultBackups() {
   const body = ov.querySelector('#backup-list-body');
 
   try {
-    const backupDir = await S.vaultDirHandle.getDirectoryHandle('backup', { create: false });
+    const backupDir = await S.vaultDirHandle.getDirectoryHandle('_backup', { create: false });
     const files = [];
     for await (const entry of backupDir.values()) {
       if (entry.kind === 'file' && entry.name.startsWith('schedule-backup-') && entry.name.endsWith('.md')) {
@@ -1733,7 +1729,7 @@ async function showVaultBackups() {
     });
 
   } catch(e) {
-    body.innerHTML = `<div class="empty-state" style="padding:24px 0">No backup folder found yet.<br><small style="font-size:11px;font-family:var(--font-mono)">vault/backup/ is created automatically on first save.</small></div>`;
+    body.innerHTML = `<div class="empty-state" style="padding:24px 0">No backup folder found yet.<br><small style="font-size:11px;font-family:var(--font-mono)">_backup/ is created automatically on first save.</small></div>`;
   }
 }
 
@@ -1814,11 +1810,11 @@ function showSettings() {
       <div class="s-section-title">Schedule Backups</div>
       <div class="s-row">
         <div>
-          <div class="s-label">📁 ${vaultName2}/backup/</div>
+          <div class="s-label">📁 ${vaultName2}/_backup/</div>
           <div class="s-sub">Up to 3 rotating backups saved here on every schedule change. Open in Obsidian or any text editor to restore manually.</div>
         </div>
       </div>
-      ${S.vaultDirHandle ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-list-backups">View Backup Files</button>` : ''}
+      ${S.vaultDirHandle ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-list-backups">View Schedule Backups</button>` : ''}
     </div>`;
 
   ov.innerHTML=`<div class="modal">
@@ -1838,12 +1834,12 @@ function showSettings() {
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">Vault Folder</div>
+      <div class="s-section-title">Habit Tracker Folder</div>
       <div class="s-row">
-        <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">📄 .md config in root · 📁 data/ for daily files</div></div>
+        <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">📄 .md config in root · 📁 data/ for daily habit files</div></div>
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Vault Folder</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Habit Tracker Folder</button>
     </div>
 
     <div class="s-section">
@@ -2072,7 +2068,7 @@ function showFirstRunSetup() {
   document.getElementById('setup-screen')?.remove();
   const sc=document.createElement('div'); sc.className='setup-screen'; sc.id='setup-screen';
   sc.innerHTML=`<div class="setup-inner">
-    <div class="setup-icon">⏰</div>
+    <div class="setup-icon">📇</div>
     <div class="setup-title">Vault Dex</div>
     <div class="setup-desc">Select your Obsidian vault folder. The app finds your .md config there, then reads and writes your daily habit data directly to it.</div>
     <button class="btn btn-green" id="fs-pick" style="width:100%;font-size:16px;padding:16px 22px">📁 Choose Vault Folder</button>
@@ -2157,12 +2153,18 @@ function buildSkeleton() {
       <div class="card-header"><span class="card-label">Now</span></div>
       <div class="card-body"></div>
     </div>
+    <div class="card" id="card-log" style="animation-delay:.05s">
+      <div class="card-header"><span class="card-label">Log</span></div>
+      <div class="card-body" style="display:flex;gap:12px;padding:12px 16px">
+        <button id="log-text-btn" style="flex:1;height:56px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s" title="Text Log">📝</button>
+        <button id="log-audio-btn" style="flex:1;height:56px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s" title="Audio Log">🎙️</button>
+      </div>
+    </div>
     <div class="card" id="card-habits" style="animation-delay:.08s">
       <div class="card-header" id="habits-card-header">
         <span class="card-label">Habits</span>
         <div style="display:flex;align-items:center;gap:10px">
           <span id="habit-edit-btn" style="font-size:12px;color:var(--muted);cursor:pointer;font-family:var(--font-mono)">✎ edit</span>
-          <span id="sync-btn" style="font-size:12px;color:var(--muted);cursor:pointer;font-family:var(--font-mono)">↺ sync</span>
         </div>
       </div>
       <div class="card-body"></div>
@@ -2171,7 +2173,6 @@ function buildSkeleton() {
       </div>
     </div>`;
 
-  document.getElementById('sync-btn')?.addEventListener('click', async()=>{ await loadFromVault(); renderAll(); showToast('Synced'); });
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
     renderHabitBars();
