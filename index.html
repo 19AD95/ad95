@@ -2194,7 +2194,14 @@ function _logsApplyFilter() {
       l.tags.some(t => t.toLowerCase().includes(q))
     );
   }
-  _logsNodes = {}; // clear pool on filter change
+
+  // ── Purge all existing DOM nodes from the spacer to prevent ghosting ──
+  if (_logsSpacerEl) {
+    _logsSpacerEl.querySelectorAll('.log-item').forEach(n => n.remove());
+  }
+  _logsNodes = {};
+  _logsRenderedRange = { start: 0, end: 0 };
+
   _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
   if (_filteredLogs.length === 0) {
     _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : 'No log files found in output folder.');
@@ -2205,6 +2212,8 @@ function _logsApplyFilter() {
   if (emp) emp.remove();
   // Set spacer height for virtual scroll
   if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
+  // Reset scroll to top on refresh so render starts from index 0
+  if (_logsViewport) _logsViewport.scrollTop = 0;
   _logsVirtualRender(true);
 }
 
