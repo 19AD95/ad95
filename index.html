@@ -400,6 +400,37 @@ async function reconnectVault() {
   return false;
 }
 
+// ── ENSURE VAULT PERMISSION ────────────────────────────────────────────────
+// Permission is requested at most ONCE per session (first user gesture).
+// After that S.vaultDirHandle is set and all operations work silently.
+let _permissionGranted = false;
+
+async function ensureVaultPermission() {
+  // Already granted this session — no prompt needed
+  if (_permissionGranted && S.vaultDirHandle) return true;
+
+  const dh = S.vaultDirHandle || S._pendingHandle
+          || await IDB.get('vaultHandle').catch(() => null);
+  if (!dh) return false;
+
+  try {
+    let perm = await dh.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      perm = await dh.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm === 'granted') {
+      S.vaultDirHandle = dh;
+      S._pendingHandle = null;
+      _permissionGranted = true;
+      // Hide reconnect banner if showing
+      const area = document.getElementById('reconnect-area');
+      if (area) area.innerHTML = '';
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 // ── GET DATA SUBFOLDER ─────────────────────────────────────────────────────
 // Returns the vault/data/ DirectoryHandle, creating it if needed
 async function getDataDir() {
@@ -411,7 +442,9 @@ async function getDataDir() {
 
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
 async function loadFromVault() {
-  if (!S.vaultDirHandle) return;
+  // Ensure we have permission — request it if needed (works during user gesture)
+  const hasPerm = await ensureVaultPermission();
+  if (!hasPerm) return;
   // Clear cached config so we always read fresh from file
   LS.del('lastConfig');
   LS.del('lastScheduleEdit');
@@ -478,7 +511,10 @@ async function loadHabitDataFromFile() {
 async function writeHabitData() {
   // Always save to localStorage immediately as backup
   LS.set('habitData_' + todayStr(), S.habitData);
-  if (!S.vaultDirHandle || !S.config) return;
+  // Try to ensure vault permission for file write
+  if (!S.config) return;
+  await ensureVaultPermission();
+  if (!S.vaultDirHandle) return;
   try {
     const dataDir = await getDataDir();
     if (!dataDir) return;
@@ -1941,6 +1977,8 @@ function showFirstRunSetup() {
     const ok = await pickVaultFolder();
     if (ok) {
       sc.remove();
+      LS.del('lastConfig');
+      LS.del('lastScheduleEdit');
       await loadFromVault();
       renderAll();
       showToast('✓ Vault connected');
@@ -1959,6 +1997,8 @@ function showReconnectBanner() {
   area.querySelector('#rb-btn').addEventListener('click', async () => {
     const ok = await reconnectVault();
     if (ok) {
+      LS.del('lastConfig');
+      LS.del('lastScheduleEdit');
       await loadFromVault();
       renderAll();
       showToast('✓ Vault reconnected');
@@ -2328,9 +2368,16 @@ async function boot() {
   }
 
   document.getElementById('btn-reload').addEventListener('click', async()=>{
-    if (S.vaultDirHandle) { await loadFromVault(); renderAll(); showToast('Reloaded'); }
-    else if (S._pendingHandle) { showReconnectBanner(); }
-    else { showFirstRunSetup(); }
+    if (S.vaultDirHandle) {
+      await loadFromVault(); renderAll(); showToast('Reloaded');
+    } else if (S._pendingHandle) {
+      // User gesture available — request permission now
+      const ok = await reconnectVault();
+      if (ok) { await loadFromVault(); renderAll(); showToast('✓ Vault reconnected'); }
+      else { showReconnectBanner(); }
+    } else {
+      showFirstRunSetup();
+    }
   });
   document.getElementById('btn-settings').addEventListener('click', showSettings);
 
@@ -2346,9 +2393,12 @@ async function boot() {
   // Attempt to restore vault handle from IndexedDB
   const state = await restoreVaultHandle();
   if (state === 'granted') {
+    _permissionGranted = true;
     await loadFromVault();
     renderAll();
   } else if (state === 'needs-grant') {
+    // Show a single one-tap reconnect banner — after that tap, permission
+    // is held for the entire session and never asked again
     showReconnectBanner();
   } else if (!LS.get('vaultFolderName')) {
     // First ever launch
