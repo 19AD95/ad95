@@ -1,6 +1,6 @@
 {
-  "name": "Habit Tracker",
-  "short_name": "Habits",
+  "name": "Vault Dex",
+  "short_name": "VaultDex",
   "description": "Offline daily schedule and habit tracker",
   "start_url": "/ad95/",
   "scope": "/ad95/",

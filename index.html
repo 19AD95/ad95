@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#0a0a0f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Habits"/>
-<title>⏰ Habit Tracker</title>
+<meta name="apple-mobile-web-app-title" content="Vault Dex"/>
+<title>Vault Dex</title>
 <link rel="manifest" href="./manifest.json"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
@@ -258,7 +258,7 @@
 <div id="app">
   <header>
     <div class="header-left">
-      <div class="header-title">⏰ Habits</div>
+      <div class="header-title">Vault Dex</div>
       <div class="header-date" id="header-date"></div>
     </div>
     <div class="header-actions">
@@ -269,7 +269,7 @@
   <div id="reconnect-area"></div>
   <div class="tabs-container">
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="0">Today</button>
+      <button class="tab-btn active" data-tab="0">Dashboard</button>
       <button class="tab-btn" data-tab="1">Schedule</button>
     </div>
     <div class="tab-panels" id="tab-panels">
@@ -841,7 +841,7 @@ function renderHabitBars() {
   const pill = document.getElementById('habit-done-pill');
   if (pill) pill.style.display = editMode ? 'flex' : 'none';
   const editBtn = document.getElementById('habit-edit-btn');
-  if (editBtn) { editBtn.textContent = editMode ? '✎ editing' : '✎ edit'; editBtn.style.color = editMode ? 'var(--accent)' : 'var(--muted)'; }
+  if (editBtn) { editBtn.textContent = '✎ edit'; editBtn.style.color = editMode ? 'var(--accent)' : 'var(--muted)'; }
 
   if (!defs || !Object.keys(defs).length) {
     if (editMode) {
@@ -1844,7 +1844,6 @@ function showSettings() {
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
       <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Vault Folder</button>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-sync">↺ Sync Now</button>
     </div>
 
     <div class="s-section">
@@ -1870,7 +1869,6 @@ function showSettings() {
   const close=()=>document.body.removeChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
-  ov.querySelector('#s-sync').addEventListener('click',async()=>{ await loadFromVault(); renderAll(); showToast('Synced'); close(); });
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
   ov.querySelector('#s-install').addEventListener('click',()=>{ close(); showInstallGuide(); });
@@ -1949,7 +1947,7 @@ function showInstallGuide() {
       </div>
       <div class="install-step">
         <div class="install-num">4</div>
-        <div class="install-text">In Chrome, click the <b>⊕ install icon</b> in the address bar (right side) → <b>"Install ⏰ Habit Tracker"</b>.
+        <div class="install-text">In Chrome, click the <b>⊕ install icon</b> in the address bar (right side) → <b>"Install Vault Dex"</b>.
           <small>The app now appears in your Start Menu / Applications and opens as a standalone window.</small>
         </div>
       </div>
@@ -1973,7 +1971,7 @@ function showInstallGuide() {
       <div class="install-step">
         <div class="install-num">2</div>
         <div class="install-text">Look for the <b>⊕</b> icon in the address bar (far right). Click it.
-          <small>If you don't see it, go to Chrome menu ⋮ → "Save and Share" → "Install ⏰ Habit Tracker…"</small>
+          <small>If you don't see it, go to Chrome menu ⋮ → "Save and Share" → "Install Vault Dex…"</small>
         </div>
       </div>
       <div class="install-step">
@@ -2075,7 +2073,7 @@ function showFirstRunSetup() {
   const sc=document.createElement('div'); sc.className='setup-screen'; sc.id='setup-screen';
   sc.innerHTML=`<div class="setup-inner">
     <div class="setup-icon">⏰</div>
-    <div class="setup-title">Habit Tracker</div>
+    <div class="setup-title">Vault Dex</div>
     <div class="setup-desc">Select your Obsidian vault folder. The app finds your .md config there, then reads and writes your daily habit data directly to it.</div>
     <button class="btn btn-green" id="fs-pick" style="width:100%;font-size:16px;padding:16px 22px">📁 Choose Vault Folder</button>
     <div class="setup-note">
@@ -2161,7 +2159,7 @@ function buildSkeleton() {
     </div>
     <div class="card" id="card-habits" style="animation-delay:.08s">
       <div class="card-header" id="habits-card-header">
-        <span class="card-label">Today's Habits</span>
+        <span class="card-label">Habits</span>
         <div style="display:flex;align-items:center;gap:10px">
           <span id="habit-edit-btn" style="font-size:12px;color:var(--muted);cursor:pointer;font-family:var(--font-mono)">✎ edit</span>
           <span id="sync-btn" style="font-size:12px;color:var(--muted);cursor:pointer;font-family:var(--font-mono)">↺ sync</span>
