@@ -412,6 +412,9 @@ async function getDataDir() {
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
 async function loadFromVault() {
   if (!S.vaultDirHandle) return;
+  // Clear cached config so we always read fresh from file
+  LS.del('lastConfig');
+  LS.del('lastScheduleEdit');
   await loadTemplate();
   await loadHabitDataFromFile();
 }
