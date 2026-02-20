@@ -360,39 +360,28 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
-
-    // First check if already granted (no prompt needed)
+    // Only silent query — never call requestPermission at boot (no user gesture)
     const perm = await dh.queryPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
+      _permissionGranted = true;
       return 'granted';
     }
-
-    // Try to silently request permission — this succeeds in some browsers
-    // when the PWA was recently used and the handle is fresh
-    try {
-      const reqPerm = await dh.requestPermission({ mode: 'readwrite' });
-      if (reqPerm === 'granted') {
-        S.vaultDirHandle = dh;
-        return 'granted';
-      }
-    } catch {
-      // requestPermission requires a user gesture in strict browsers — fall through to banner
-    }
-
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
 }
 
+
 async function reconnectVault() {
-  const dh = S._pendingHandle;
+  const dh = S._pendingHandle || await IDB.get('vaultHandle').catch(()=>null);
   if (!dh) { await pickVaultFolder(); return !!S.vaultDirHandle; }
   try {
-    const perm = await dh.requestPermission({ mode:'readwrite' });
+    const perm = await dh.requestPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       S._pendingHandle = null;
+      _permissionGranted = true;
       document.getElementById('reconnect-area').innerHTML = '';
       return true;
     }
@@ -406,30 +395,12 @@ async function reconnectVault() {
 let _permissionGranted = false;
 
 async function ensureVaultPermission() {
-  // Already granted this session — no prompt needed
   if (_permissionGranted && S.vaultDirHandle) return true;
-
-  const dh = S.vaultDirHandle || S._pendingHandle
-          || await IDB.get('vaultHandle').catch(() => null);
-  if (!dh) return false;
-
-  try {
-    let perm = await dh.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') {
-      perm = await dh.requestPermission({ mode: 'readwrite' });
-    }
-    if (perm === 'granted') {
-      S.vaultDirHandle = dh;
-      S._pendingHandle = null;
-      _permissionGranted = true;
-      // Hide reconnect banner if showing
-      const area = document.getElementById('reconnect-area');
-      if (area) area.innerHTML = '';
-      return true;
-    }
-  } catch {}
-  return false;
+  // Permission not yet granted this session — caller must use reconnectVault()
+  // via a user gesture. Can't silently request here.
+  return !!S.vaultDirHandle;
 }
+
 
 // ── GET DATA SUBFOLDER ─────────────────────────────────────────────────────
 // Returns the vault/data/ DirectoryHandle, creating it if needed
