@@ -292,6 +292,9 @@ const S = {
   countdownInterval: null,
   checkInterval: null,
   vaultDirHandle: null,
+  logDirHandle: null,
+  logTemplateHandle: null,
+  logOutputDirHandle: null,
   _pendingHandle: null,
   scheduleOpen: false, // legacy, unused
   notifPermission: Notification.permission,
@@ -1733,6 +1736,275 @@ async function showVaultBackups() {
   }
 }
 
+
+// ── LOG TEMPLATE FILE ──────────────────────────────────────────────────────
+async function pickLogTemplateFile() {
+  try {
+    // showOpenFilePicker lets user select a single .md file
+    const [fh] = await window.showOpenFilePicker({
+      id: 'logTemplate',
+      types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+      excludeAcceptAllOption: true,
+    });
+    S.logTemplateHandle = fh;
+    await IDB.set('logTemplateHandle', fh);
+    LS.set('logTemplateName', fh.name);
+    showToast(`📄 ${fh.name} set as log template`);
+    return true;
+  } catch(e) {
+    if (e.name !== 'AbortError') showToast('Could not open file');
+    return false;
+  }
+}
+
+async function restoreLogTemplateHandle() {
+  try {
+    const fh = await IDB.get('logTemplateHandle');
+    if (!fh) return;
+    let perm;
+    try { perm = await fh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    if (perm === 'granted') { S.logTemplateHandle = fh; return; }
+    // store pending so reconnect banner can re-request
+    S._pendingLogHandle = fh;
+  } catch {}
+}
+
+async function pickLogOutputFolder() {
+  try {
+    const dh = await window.showDirectoryPicker({ mode: 'readwrite', id: 'logOutput' });
+    S.logOutputDirHandle = dh;
+    await IDB.set('logOutputHandle', dh);
+    LS.set('logOutputFolderName', dh.name);
+    showToast(`📁 ${dh.name} set as log output folder`);
+    return true;
+  } catch(e) {
+    if (e.name !== 'AbortError') showToast('Could not open folder');
+    return false;
+  }
+}
+
+async function restoreLogOutputHandle() {
+  try {
+    const dh = await IDB.get('logOutputHandle');
+    if (!dh) return;
+    let perm;
+    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    if (perm === 'granted') { S.logOutputDirHandle = dh; }
+    else S._pendingLogOutputHandle = dh;
+  } catch {}
+}
+
+async function reconnectLogTemplate() {
+  const fh = S._pendingLogHandle || await IDB.get('logTemplateHandle').catch(()=>null);
+  if (!fh) return false;
+  try {
+    const perm = await fh.requestPermission({ mode: 'readwrite' });
+    if (perm === 'granted') { S.logTemplateHandle = fh; S._pendingLogHandle = null; return true; }
+  } catch {}
+  return false;
+}
+
+// ── LOG WRITING HELPERS ────────────────────────────────────────────────────
+function sanitizeForYAML(input) {
+  if (typeof input !== 'string') return input;
+  const needsQuoting = /[:"'#\[\]{}&*!|>%@`]/.test(input) ||
+    input.trim() !== input ||
+    /^[0-9]/.test(input) ||
+    /^(true|false|null|yes|no)$/i.test(input);
+  if (!needsQuoting) return input;
+  return '"' + input.replace(/"/g, '\\"') + '"';
+}
+
+function extractTagsFromText(text) {
+  const tags = (text.match(/#[\w]+/g) || []).map(t => t.slice(1));
+  const cleaned = text.replace(/#[\w]+/g, '').replace(/\s{2,}/g, ' ').trim();
+  return { tags, cleaned };
+}
+
+function fmtDateYMD(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+function fmtTimeHMA(d) {
+  let h = d.getHours(), m = d.getMinutes();
+  const ap = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' ' + ap;
+}
+
+async function writeLogEntry(logText) {
+  const now = new Date();
+  const dateStr = fmtDateYMD(now);     // YYYY-MM-DD
+  const timeStr = fmtTimeHMA(now);     // hh:mm am/pm
+
+  // ── Extract #tags from user text, clean them out of the log body ──
+  const { tags, cleaned } = extractTagsFromText(logText);
+  const sanitizedLog = sanitizeForYAML(cleaned);
+
+  if (!S.logTemplateHandle) {
+    showToast('No log template set — tap ⚙ Settings → Set Log Template');
+    return false;
+  }
+
+  let templateText;
+  try {
+    // Request permission if needed (requires user gesture — we're inside click handler)
+    const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
+    const file = await S.logTemplateHandle.getFile();
+    templateText = await file.text();
+  } catch(e) {
+    showToast('Could not read log template: ' + e.message);
+    return false;
+  }
+
+  // ── Fill in {{date:YYYY-MM-DD}} and {{DATE:hh:mm a}} placeholders ──
+  let filled = templateText
+    .replace(/\{\{date:YYYY-MM-DD\}\}/g, dateStr)
+    .replace(/\{\{DATE:hh:mm a\}\}/g, timeStr);
+
+  // ── Parse YAML frontmatter ──
+  const fmMatch = filled.match(/^(---\n)([\s\S]+?)(\n---)([ \S]*)/);
+  if (!fmMatch) { showToast('Template has no YAML frontmatter'); return false; }
+  const [, open, yaml, close, body] = fmMatch;
+  const yamlLines = yaml.split('\n');
+
+  // ── Set log field ──
+  const logIdx = yamlLines.findIndex(l => l.startsWith('log:'));
+  if (logIdx !== -1) {
+    yamlLines[logIdx] = `log: ${sanitizedLog}`;
+  } else {
+    yamlLines.push(`log: ${sanitizedLog}`);
+  }
+
+  // ── Merge tags ──
+  const tagsIdx = yamlLines.findIndex(l => l.trim() === 'tags:');
+  let existingTags = [];
+  if (tagsIdx !== -1) {
+    let i = tagsIdx + 1;
+    while (i < yamlLines.length && yamlLines[i].trim().startsWith('- ')) {
+      existingTags.push(yamlLines[i].trim().replace(/^- /, ''));
+      i++;
+    }
+    // Remove old tags block
+    yamlLines.splice(tagsIdx, existingTags.length + 1);
+  }
+  const mergedTags = [...new Set([...existingTags, ...tags])];
+  const finalTags = mergedTags.length > 0 ? mergedTags : ['explore'];
+
+  // Insert tags block — find log position again after potential splice
+  const logIdx2 = yamlLines.findIndex(l => l.startsWith('log:'));
+  const insertAt = logIdx2 !== -1 ? logIdx2 : yamlLines.length;
+  yamlLines.splice(insertAt, 0, 'tags:', ...finalTags.map(t => `  - ${t}`));
+
+  // ── Build final content ──
+  const newContent = open + yamlLines.join('\n') + close + body;
+
+  // ── Write to output folder as a new timestamped file ──
+  if (!S.logOutputDirHandle) {
+    showToast('No log output folder set — tap ⚙ Settings → Set Log Output Folder');
+    return false;
+  }
+  try {
+    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
+    // Filename: YYYY-MM-DD-HHmm-log.md  (unique per minute)
+    const ts = now.toISOString().replace(/[-:]/g,'').replace('T','').slice(0,12);
+    const filename = `${dateStr}-${ts.slice(8,12)}-log.md`;
+    const fh = await S.logOutputDirHandle.getFileHandle(filename, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(newContent);
+    await writable.close();
+    return true;
+  } catch(e) {
+    showToast('Could not write log: ' + e.message);
+    return false;
+  }
+}
+
+// ── LOG TEXT POPUP ───────────────────────────────────────────────────────────
+function showLogTextPopup() {
+  // If no template set, nudge user to set one first
+  if (!S.logTemplateHandle || !S.logOutputDirHandle) {
+    const missing = !S.logTemplateHandle && !S.logOutputDirHandle
+      ? 'Log template and output folder are'
+      : !S.logTemplateHandle ? 'Log template is' : 'Log output folder is';
+    const ov = document.createElement('div');
+    ov.className = 'sched-edit-popup';
+    ov.innerHTML = `<div class="sched-edit-sheet" style="max-height:70dvh">
+      <div class="modal-handle"></div>
+      <div style="font-size:16px;font-weight:800;margin-bottom:10px">Setup Required</div>
+      <div style="font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-bottom:20px;line-height:1.6">
+        ${missing} not set.<br><br>Go to ⚙ Settings → Daily Log<br>to set your template file and output folder.
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" id="ltp-cancel" style="flex:1">Cancel</button>
+        <button class="btn btn-green" id="ltp-goto" style="flex:2">Open Settings</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const close = () => document.body.removeChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    ov.querySelector('#ltp-cancel').addEventListener('click', close);
+    ov.querySelector('#ltp-goto').addEventListener('click', () => { close(); showSettings(); });
+    return;
+  }
+
+  const ov = document.createElement('div');
+  ov.className = 'sched-edit-popup';
+  ov.innerHTML = `<div class="sched-edit-sheet" style="max-height:90dvh">
+    <div class="modal-handle"></div>
+    <div style="font-size:16px;font-weight:800;margin-bottom:4px">📝 Text Log</div>
+    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-bottom:12px">
+      Use #hashtags to auto-tag your entry
+    </div>
+    <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">What's on your mind?</div>
+    <textarea id="log-text-input" placeholder="Type your thoughts… #idea #work"
+      style="width:100%;min-height:140px;resize:vertical;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;line-height:1.6;margin-bottom:14px;transition:border-color .15s"></textarea>
+    <div id="log-tag-preview" style="min-height:22px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" id="log-cancel" style="flex:1">Cancel</button>
+      <button class="btn btn-green" id="log-ok" style="flex:2">✓ Save Log</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+
+  const textarea = ov.querySelector('#log-text-input');
+  const tagPreview = ov.querySelector('#log-tag-preview');
+  const close = () => document.body.removeChild(ov);
+
+  // Live tag preview as user types
+  textarea.addEventListener('input', () => {
+    const tags = (textarea.value.match(/#[\w]+/g) || []);
+    tagPreview.innerHTML = tags.map(t =>
+      `<span style="background:rgba(0,255,136,.12);border:1px solid rgba(0,255,136,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-family:var(--font-mono);color:var(--accent)">${t}</span>`
+    ).join('');
+    textarea.style.borderColor = 'var(--accent)';
+  });
+  textarea.addEventListener('blur', () => { textarea.style.borderColor = 'var(--border)'; });
+  textarea.addEventListener('focus', () => { textarea.style.borderColor = 'var(--accent)'; });
+
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  ov.querySelector('#log-cancel').addEventListener('click', close);
+
+  ov.querySelector('#log-ok').addEventListener('click', async () => {
+    const text = textarea.value.trim();
+    if (!text) { showToast('Write something first'); return; }
+    const btn = ov.querySelector('#log-ok');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const ok = await writeLogEntry(text);
+    if (ok) {
+      showToast('✓ Log saved');
+      close();
+    } else {
+      btn.disabled = false; btn.textContent = '✓ Save Log';
+    }
+  });
+
+  setTimeout(() => textarea.focus(), 100);
+}
+
 // ── SETTINGS MODAL ─────────────────────────────────────────────────────────
 function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 19) ? 'light' : 'dark'; }
 function applyTheme(t) {
@@ -1843,6 +2115,26 @@ function showSettings() {
     </div>
 
     <div class="s-section">
+      <div class="s-section-title">Daily Log</div>
+      <div class="s-row">
+        <div>
+          <div class="s-label">📄 Template: ${LS.get('logTemplateName') || 'Not set'}</div>
+          <div class="s-sub">The .md file used as the log entry template</div>
+        </div>
+        <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'SET':'UNSET'}</span>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-template">Set Log Template File</button>
+      <div class="s-row" style="margin-top:10px">
+        <div>
+          <div class="s-label">📁 Output: ${LS.get('logOutputFolderName') || 'Not set'}</div>
+          <div class="s-sub">Folder where new log entries are saved</div>
+        </div>
+        <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'SET':'UNSET'}</span>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-output">Set Log Output Folder</button>
+    </div>
+
+    <div class="s-section">
       <div class="s-section-title">Notifications</div>
       ${notifSection}
     </div>
@@ -1866,6 +2158,8 @@ function showSettings() {
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
+  ov.querySelector('#s-set-log-template').addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
+  ov.querySelector('#s-set-log-output').addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
   ov.querySelector('#s-install').addEventListener('click',()=>{ close(); showInstallGuide(); });
   // Battery optimization buttons
@@ -2173,6 +2467,9 @@ function buildSkeleton() {
       </div>
     </div>`;
 
+
+  // ── Log text button ──
+  document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
     renderHabitBars();
