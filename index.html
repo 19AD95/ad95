@@ -524,7 +524,7 @@ function parseMd(text) {
   try {
     const yaml = fm[1];
     const schedule = [];
-    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^\w)/m);
+    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^\w|\s*$)/m);
     if (sm) {
       let cur = null;
       for (const line of sm[1].split('\n')) {
@@ -535,7 +535,7 @@ function parseMd(text) {
       }
     }
     const habitDefinitions = {};
-    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^\w)/m);
+    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^\w|\s*$)/m);
     if (hm) {
       for (const block of hm[1].split(/\n(?=  \w)/)) {
         const km = block.match(/^\s{2}(\w+):/);
@@ -948,7 +948,7 @@ async function saveHabitDefinitionsToVault() {
   if (!S.vaultDirHandle || !S.config) return;
   try {
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
         const newText = rebuildHabitDefsInMd(originalText, S.config.habitDefinitions || {});
@@ -1566,7 +1566,7 @@ async function saveScheduleToVault() {
   try {
     // Find the config .md file
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
 
