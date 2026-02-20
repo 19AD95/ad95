@@ -360,13 +360,21 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
-    // Silent check only — never call requestPermission here (no user gesture at boot)
-    const perm = await dh.queryPermission({ mode: 'readwrite' });
+    // Validate the handle is usable — bad handles from old deployments throw here
+    let perm;
+    try {
+      perm = await dh.queryPermission({ mode: 'readwrite' });
+    } catch {
+      // Handle is corrupt/stale (e.g. from a different origin/deployment)
+      // Clear it so user gets a clean first-run setup
+      await IDB.del('vaultHandle');
+      LS.del('vaultFolderName');
+      return 'none';
+    }
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       return 'granted';
     }
-    // Store handle so reconnect banner can use it
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
