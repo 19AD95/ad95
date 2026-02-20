@@ -240,7 +240,7 @@
   .time-drum::before,.time-drum::after{content:'';position:absolute;left:0;right:0;height:44px;z-index:2;pointer-events:none}
   .time-drum::before{top:0;background:linear-gradient(to bottom,var(--bg3),transparent)}
   .time-drum::after{bottom:0;background:linear-gradient(to top,var(--bg3),transparent)}
-  .time-drum-highlight{position:absolute;top:50%;left:0;right:0;height:44px;transform:translateY(-50%);border-top:1px solid var(--accent);border-bottom:1px solid var(--accent);pointer-events:none;opacity:.5;z-index:1}
+  .time-drum-highlight{position:absolute;top:44px;left:0;right:0;height:44px;border-top:1px solid var(--accent);border-bottom:1px solid var(--accent);pointer-events:none;opacity:.5;z-index:1}
   .time-colon{font-size:28px;font-weight:800;font-family:var(--font-mono);color:var(--text);padding-bottom:4px}
   .ampm-drum{width:56px}
   .ampm-drum .time-drum-item{font-size:15px}
@@ -1427,46 +1427,51 @@ function buildTimeDrum(containerId, initialTime) {
     const highlight = document.createElement('div');
     highlight.className = 'time-drum-highlight';
     drum.appendChild(highlight);
-
-    // Add padding items top/bottom so selected item is centered
-    [null, null].forEach(() => {
-      const pad = document.createElement('div');
-      pad.className = 'time-drum-item';
-      inner.appendChild(pad);
-    });
-    items.forEach((val, i) => {
-      const item = document.createElement('div');
-      item.className = 'time-drum-item' + (i === initIdx ? ' selected' : '');
-      item.textContent = val;
-      inner.appendChild(item);
-    });
-    [null, null].forEach(() => {
-      const pad = document.createElement('div');
-      pad.className = 'time-drum-item';
-      inner.appendChild(pad);
-    });
-
     drum.appendChild(inner);
     col.appendChild(drum);
 
     const ITEM_H = 44;
-    const DRUM_H = 140; // fixed height from CSS — don't use clientHeight (0 before mount)
-    const CENTER_OFFSET = (DRUM_H / 2) - (ITEM_H / 2); // 70 - 22 = 48px
-    let selected = initIdx;
+    const DRUM_H = 140;
+    const VISIBLE = Math.floor(DRUM_H / ITEM_H); // 3 visible items
+    const PAD = Math.floor(VISIBLE / 2);          // 1 padding each side
+
+    // Padding top
+    for (let p = 0; p < PAD; p++) {
+      const pad = document.createElement('div');
+      pad.className = 'time-drum-item';
+      inner.appendChild(pad);
+    }
+    // Real items
+    items.forEach((val, i) => {
+      const item = document.createElement('div');
+      item.className = 'time-drum-item';
+      item.textContent = val;
+      inner.appendChild(item);
+    });
+    // Padding bottom
+    for (let p = 0; p < PAD; p++) {
+      const pad = document.createElement('div');
+      pad.className = 'time-drum-item';
+      inner.appendChild(pad);
+    }
+
+    let selected = Math.max(0, Math.min(items.length - 1, initIdx));
     let startY = 0, isDragging = false;
 
-    function getTranslateY() { return CENTER_OFFSET - selected * ITEM_H; }
+    // selected=0 → inner starts at 0 (first real item centered)
+    function getTranslateY() { return -selected * ITEM_H; }
 
     function render(animate) {
       inner.style.transition = animate ? 'transform .2s cubic-bezier(.25,.8,.25,1)' : 'none';
       inner.style.transform = `translateY(${getTranslateY()}px)`;
+      // items in inner: PAD pads, then real items at indices PAD..PAD+items.length-1
       inner.querySelectorAll('.time-drum-item').forEach((el, i) => {
-        el.classList.toggle('selected', i - 2 === selected);
+        el.classList.toggle('selected', i === PAD + selected);
       });
     }
 
-    function moveTo(newSelected) {
-      selected = Math.max(0, Math.min(items.length - 1, newSelected));
+    function moveTo(n) {
+      selected = Math.max(0, Math.min(items.length - 1, n));
       render(true);
     }
 
@@ -1478,14 +1483,12 @@ function buildTimeDrum(containerId, initialTime) {
     });
     drum.addEventListener('pointermove', e => {
       if (!isDragging) return;
-      const dy = e.clientY - startY;
-      inner.style.transform = `translateY(${getTranslateY() + dy}px)`;
+      inner.style.transform = `translateY(${getTranslateY() + (e.clientY - startY)}px)`;
     });
     drum.addEventListener('pointerup', e => {
       if (!isDragging) return;
       isDragging = false;
-      const dy = e.clientY - startY;
-      moveTo(selected - Math.round(dy / ITEM_H));
+      moveTo(selected - Math.round((e.clientY - startY) / ITEM_H));
     });
     drum.addEventListener('wheel', e => {
       e.preventDefault();
