@@ -360,47 +360,45 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
-    // Only silent query — never call requestPermission at boot (no user gesture)
+
+    // First check if already granted (no prompt needed)
     const perm = await dh.queryPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
-      _permissionGranted = true;
       return 'granted';
     }
+
+    // Try to silently request permission — this succeeds in some browsers
+    // when the PWA was recently used and the handle is fresh
+    try {
+      const reqPerm = await dh.requestPermission({ mode: 'readwrite' });
+      if (reqPerm === 'granted') {
+        S.vaultDirHandle = dh;
+        return 'granted';
+      }
+    } catch {
+      // requestPermission requires a user gesture in strict browsers — fall through to banner
+    }
+
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
 }
 
-
 async function reconnectVault() {
-  const dh = S._pendingHandle || await IDB.get('vaultHandle').catch(()=>null);
+  const dh = S._pendingHandle;
   if (!dh) { await pickVaultFolder(); return !!S.vaultDirHandle; }
   try {
-    const perm = await dh.requestPermission({ mode: 'readwrite' });
+    const perm = await dh.requestPermission({ mode:'readwrite' });
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       S._pendingHandle = null;
-      _permissionGranted = true;
       document.getElementById('reconnect-area').innerHTML = '';
       return true;
     }
   } catch {}
   return false;
 }
-
-// ── ENSURE VAULT PERMISSION ────────────────────────────────────────────────
-// Permission is requested at most ONCE per session (first user gesture).
-// After that S.vaultDirHandle is set and all operations work silently.
-let _permissionGranted = false;
-
-async function ensureVaultPermission() {
-  if (_permissionGranted && S.vaultDirHandle) return true;
-  // Permission not yet granted this session — caller must use reconnectVault()
-  // via a user gesture. Can't silently request here.
-  return !!S.vaultDirHandle;
-}
-
 
 // ── GET DATA SUBFOLDER ─────────────────────────────────────────────────────
 // Returns the vault/data/ DirectoryHandle, creating it if needed
@@ -413,12 +411,7 @@ async function getDataDir() {
 
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
 async function loadFromVault() {
-  // Ensure we have permission — request it if needed (works during user gesture)
-  const hasPerm = await ensureVaultPermission();
-  if (!hasPerm) return;
-  // Clear cached config so we always read fresh from file
-  LS.del('lastConfig');
-  LS.del('lastScheduleEdit');
+  if (!S.vaultDirHandle) return;
   await loadTemplate();
   await loadHabitDataFromFile();
 }
@@ -427,7 +420,7 @@ async function loadTemplate() {
   if (!S.vaultDirHandle) return false;
   try {
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
+      if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
         const file = await entry.getFile();
         const text = await file.text();
         const cfg = parseMd(text);
@@ -482,10 +475,7 @@ async function loadHabitDataFromFile() {
 async function writeHabitData() {
   // Always save to localStorage immediately as backup
   LS.set('habitData_' + todayStr(), S.habitData);
-  // Try to ensure vault permission for file write
-  if (!S.config) return;
-  await ensureVaultPermission();
-  if (!S.vaultDirHandle) return;
+  if (!S.vaultDirHandle || !S.config) return;
   try {
     const dataDir = await getDataDir();
     if (!dataDir) return;
@@ -515,7 +505,7 @@ function parseMd(text) {
   try {
     const yaml = fm[1];
     const schedule = [];
-    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^[a-zA-Z]\w*:|\s*$(?![\s\S]))/ms);
+    const sm = yaml.match(/^schedule:\s*\n([\s\S]*?)(?=^\w)/m);
     if (sm) {
       let cur = null;
       for (const line of sm[1].split('\n')) {
@@ -526,7 +516,7 @@ function parseMd(text) {
       }
     }
     const habitDefinitions = {};
-    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^[a-zA-Z]\w*:|\s*$(?![\s\S]))/ms);
+    const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^\w)/m);
     if (hm) {
       for (const block of hm[1].split(/\n(?=  \w)/)) {
         const km = block.match(/^\s{2}(\w+):/);
@@ -939,7 +929,7 @@ async function saveHabitDefinitionsToVault() {
   if (!S.vaultDirHandle || !S.config) return;
   try {
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
         const newText = rebuildHabitDefsInMd(originalText, S.config.habitDefinitions || {});
@@ -1445,7 +1435,7 @@ async function saveScheduleToVault() {
   try {
     // Find the config .md file
     for await (const entry of S.vaultDirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{14}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
 
@@ -1948,8 +1938,6 @@ function showFirstRunSetup() {
     const ok = await pickVaultFolder();
     if (ok) {
       sc.remove();
-      LS.del('lastConfig');
-      LS.del('lastScheduleEdit');
       await loadFromVault();
       renderAll();
       showToast('✓ Vault connected');
@@ -1968,8 +1956,6 @@ function showReconnectBanner() {
   area.querySelector('#rb-btn').addEventListener('click', async () => {
     const ok = await reconnectVault();
     if (ok) {
-      LS.del('lastConfig');
-      LS.del('lastScheduleEdit');
       await loadFromVault();
       renderAll();
       showToast('✓ Vault reconnected');
@@ -2339,16 +2325,9 @@ async function boot() {
   }
 
   document.getElementById('btn-reload').addEventListener('click', async()=>{
-    if (S.vaultDirHandle) {
-      await loadFromVault(); renderAll(); showToast('Reloaded');
-    } else if (S._pendingHandle) {
-      // User gesture available — request permission now
-      const ok = await reconnectVault();
-      if (ok) { await loadFromVault(); renderAll(); showToast('✓ Vault reconnected'); }
-      else { showReconnectBanner(); }
-    } else {
-      showFirstRunSetup();
-    }
+    if (S.vaultDirHandle) { await loadFromVault(); renderAll(); showToast('Reloaded'); }
+    else if (S._pendingHandle) { showReconnectBanner(); }
+    else { showFirstRunSetup(); }
   });
   document.getElementById('btn-settings').addEventListener('click', showSettings);
 
@@ -2364,12 +2343,9 @@ async function boot() {
   // Attempt to restore vault handle from IndexedDB
   const state = await restoreVaultHandle();
   if (state === 'granted') {
-    _permissionGranted = true;
     await loadFromVault();
     renderAll();
   } else if (state === 'needs-grant') {
-    // Show a single one-tap reconnect banner — after that tap, permission
-    // is held for the entire session and never asked again
     showReconnectBanner();
   } else if (!LS.get('vaultFolderName')) {
     // First ever launch
