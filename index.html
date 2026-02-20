@@ -869,10 +869,12 @@ function renderHabitBars() {
     if (editMode) {
       col.style.cssText = 'position:relative;width:56px;display:flex;flex-direction:column;align-items:center;gap:0;padding-top:6px';
       col.innerHTML = `
-        <div style="font-size:30px;line-height:1;user-select:none;padding-bottom:4px">${cfg.icon}</div>
-        <button class="habit-edit-icon" data-key="${key}" style="width:52px;padding:3px 0;background:rgba(0,255,136,.13);border:1.5px solid rgba(0,255,136,.35);border-bottom:none;border-radius:8px 8px 0 0;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✎ edit</button>
-        <button class="habit-remove-btn-inline" data-key="${key}" style="width:52px;padding:3px 0;background:rgba(255,68,102,.1);border:1.5px solid rgba(255,68,102,.3);border-radius:0 0 8px 8px;color:var(--danger);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✕ del</button>
-        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px">${key}</div>`;
+        <div style="position:relative;display:inline-block">
+          <div style="font-size:30px;line-height:1;user-select:none;padding-bottom:4px">${cfg.icon}</div>
+          <button class="habit-remove-btn-inline" data-key="${key}" style="position:absolute;top:-6px;right:-8px;width:18px;height:18px;border-radius:50%;background:var(--danger);border:none;color:#fff;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;padding:0">✕</button>
+        </div>
+        <button class="habit-edit-icon" data-key="${key}" style="width:52px;padding:3px 0;background:rgba(0,255,136,.13);border:1.5px solid rgba(0,255,136,.35);border-radius:8px;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✎ edit</button>
+        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px">${key}</div>`;
     } else {
       col.innerHTML = `
         <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="height:${pct}%"></div></div>
@@ -1448,47 +1450,49 @@ function buildTimeDrum(containerId, initialTime) {
     col.appendChild(drum);
 
     const ITEM_H = 44;
+    const DRUM_H = 140; // fixed height from CSS — don't use clientHeight (0 before mount)
+    const CENTER_OFFSET = (DRUM_H / 2) - (ITEM_H / 2); // 70 - 22 = 48px
     let selected = initIdx;
-    let startY = 0, startOffset = 0, isDragging = false;
+    let startY = 0, isDragging = false;
 
-    function getOffset() { return -(selected * ITEM_H); }
-    function render() {
+    function getTranslateY() { return CENTER_OFFSET - selected * ITEM_H; }
+
+    function render(animate) {
+      inner.style.transition = animate ? 'transform .2s cubic-bezier(.25,.8,.25,1)' : 'none';
+      inner.style.transform = `translateY(${getTranslateY()}px)`;
       inner.querySelectorAll('.time-drum-item').forEach((el, i) => {
         el.classList.toggle('selected', i - 2 === selected);
       });
-      inner.style.transform = `translateY(${(drum.clientHeight / 2) - ITEM_H / 2 + getOffset()}px)`;
     }
-    function snap(delta) {
-      selected = Math.max(0, Math.min(items.length - 1, selected - Math.round(delta / ITEM_H)));
-      render();
+
+    function moveTo(newSelected) {
+      selected = Math.max(0, Math.min(items.length - 1, newSelected));
+      render(true);
     }
 
     drum.addEventListener('pointerdown', e => {
-      isDragging = true; startY = e.clientY;
-      const mat = new DOMMatrix(getComputedStyle(inner).transform);
-      startOffset = mat.m42;
+      isDragging = true;
+      startY = e.clientY;
       inner.style.transition = 'none';
       drum.setPointerCapture(e.pointerId);
     });
     drum.addEventListener('pointermove', e => {
       if (!isDragging) return;
       const dy = e.clientY - startY;
-      inner.style.transform = `translateY(${startOffset + dy}px)`;
+      inner.style.transform = `translateY(${getTranslateY() + dy}px)`;
     });
     drum.addEventListener('pointerup', e => {
       if (!isDragging) return;
       isDragging = false;
       const dy = e.clientY - startY;
-      inner.style.transition = 'transform .2s ease';
-      snap(dy);
+      moveTo(selected - Math.round(dy / ITEM_H));
     });
     drum.addEventListener('wheel', e => {
       e.preventDefault();
-      inner.style.transition = 'transform .15s ease';
-      snap(-e.deltaY);
+      moveTo(selected + (e.deltaY > 0 ? 1 : -1));
     }, { passive: false });
 
-    render();
+    render(false);
     return { drum: col, getSelected: () => items[selected] };
   }
 
