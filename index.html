@@ -881,7 +881,13 @@ function renderHabitBars() {
       ac.addEventListener('click', () => showAddHabitSheet());
       g.appendChild(ac); body.innerHTML = ''; body.appendChild(g);
     } else {
-      body.innerHTML = `<div class="empty-state">No habits configured</div>`;
+      body.innerHTML = `<div class="empty-state" style="padding:24px 16px;line-height:2">
+        No habits configured<br>
+        <span style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">
+          Tap <b style="color:var(--text)">✎ edit</b> to add habits, or connect your<br>
+          habit tracker folder via <b style="color:var(--text)">⚙ Settings → Habit Tracker Folder</b>
+        </span>
+      </div>`;
     }
     return;
   }
@@ -1348,7 +1354,10 @@ function renderScheduleTab(editMode) {
 
   if (!sc?.length && !editMode) {
     el.innerHTML = `<div class="schedule-empty">📭 No schedule loaded<br>
-      <small style="font-size:11px;font-family:var(--font-mono);opacity:.7">Connect your vault or tap ✎ to add entries</small></div>`;
+      <small style="font-size:11px;font-family:var(--font-mono);opacity:.7">
+        Tap <b>⚙ Settings → Habit Tracker Folder</b> to connect your vault,<br>
+        or tap <b>✎ Edit</b> below to add entries manually
+      </small></div>`;
     return;
   }
 
@@ -1831,8 +1840,11 @@ async function restoreLogOutputHandle() {
     if (!dh) return;
     let perm;
     try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm === 'granted') { S.logOutputDirHandle = dh; }
-    else S._pendingLogOutputHandle = dh;
+    if (perm === 'granted') {
+      S.logOutputDirHandle = dh;
+    } else {
+      S._pendingLogOutputHandle = dh;
+    }
   } catch {}
 }
 
@@ -2311,13 +2323,110 @@ async function _openLogDetail(log) {
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-bottom:4px">${log.dateLabel || log.filename}</div>
     <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:14px">${log.path}</div>
     ${log.tags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${log.tags.map(t=>`<span class="log-item-tag">#${t}</span>`).join('')}</div>` : ''}
-    <div class="log-detail-body">${(log._fullText || log.preview || '').replace(/</g,'&lt;')}</div>
-    <button class="btn btn-ghost" style="width:100%" id="ld-close">Close</button>
+    <div class="log-detail-body" id="ld-body">${(log._fullText || log.preview || '').replace(/</g,'&lt;')}</div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-ghost" style="flex:1;font-size:13px" id="ld-edit">✎ Edit</button>
+      <button class="btn btn-ghost" style="flex:1;font-size:13px;color:var(--danger);border-color:rgba(255,68,102,.3)" id="ld-delete">✕ Delete</button>
+      <button class="btn btn-ghost" style="flex:1;font-size:13px" id="ld-close">Close</button>
+    </div>
   </div>`;
   document.body.appendChild(ov);
   const close = () => document.body.removeChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
   ov.querySelector('#ld-close').addEventListener('click', close);
+
+  // ── Edit ──
+  ov.querySelector('#ld-edit').addEventListener('click', () => {
+    close();
+    _openLogEditor(log);
+  });
+
+  // ── Delete ──
+  ov.querySelector('#ld-delete').addEventListener('click', async () => {
+    if (!confirm(`Delete "${log.filename}"? This cannot be undone.`)) return;
+    try {
+      // Get parent dir handle
+      const parts = log.path.split('/');
+      parts.pop(); // remove filename
+      let dir = S.logOutputDirHandle;
+      for (const seg of parts) {
+        if (seg) dir = await dir.getDirectoryHandle(seg, { create: false });
+      }
+      const perm = await dir.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { showToast('Permission denied'); return; }
+      await dir.removeEntry(log.filename);
+      // Remove from in-memory arrays
+      _allLogs = _allLogs.filter(l => l.path !== log.path);
+      _logsApplyFilter();
+      showToast('🗑 Log deleted');
+      close();
+    } catch(e) {
+      showToast('Delete failed: ' + e.message);
+    }
+  });
+}
+
+// ── LOG EDITOR ───────────────────────────────────────────────────────────────
+function _openLogEditor(log) {
+  const ov = document.createElement('div'); ov.className = 'modal-overlay';
+  const rawText = log._fullText || '';
+
+  ov.innerHTML = `<div class="modal" style="max-height:92dvh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div style="font-size:14px;font-weight:800;margin-bottom:4px">✎ Edit Log</div>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:12px">${log.path}</div>
+    <textarea id="le-body" style="width:100%;min-height:200px;resize:vertical;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;line-height:1.6;margin-bottom:14px;transition:border-color .15s">${rawText.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:1" id="le-cancel">Cancel</button>
+      <button class="btn btn-green" style="flex:2" id="le-save">✓ Save Changes</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+
+  const ta = ov.querySelector('#le-body');
+  // Unescape for actual editing
+  ta.value = rawText;
+  ta.addEventListener('focus', () => ta.style.borderColor = 'var(--accent)');
+  ta.addEventListener('blur', () => ta.style.borderColor = 'var(--border)');
+
+  const close = () => document.body.removeChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  ov.querySelector('#le-cancel').addEventListener('click', close);
+
+  ov.querySelector('#le-save').addEventListener('click', async () => {
+    const newText = ta.value;
+    const btn = ov.querySelector('#le-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      // Navigate to the file's directory
+      const parts = log.path.split('/');
+      parts.pop();
+      let dir = S.logOutputDirHandle;
+      for (const seg of parts) {
+        if (seg) dir = await dir.getDirectoryHandle(seg, { create: false });
+      }
+      const perm = await dir.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
+      const fh = await dir.getFileHandle(log.filename, { create: false });
+      const w = await fh.createWritable();
+      await w.write(newText);
+      await w.close();
+      // Update in-memory cache
+      log._fullText = newText;
+      log.loaded = false; // force re-parse preview/tags on next render
+      await _loadLogPreview(log);
+      // Refresh the virtual list node
+      const idx = _filteredLogs.indexOf(log);
+      if (idx !== -1 && _logsNodes[idx]) _renderLogNode(_logsNodes[idx], log);
+      showToast('✓ Log saved');
+      close();
+    } catch(e) {
+      showToast('Save failed: ' + e.message);
+      btn.disabled = false; btn.textContent = '✓ Save Changes';
+    }
+  });
+
+  setTimeout(() => ta.focus(), 100);
 }
 
 
@@ -3099,10 +3208,9 @@ async function boot() {
     if (S.vaultDirHandle) {
       await loadFromVault(); renderAll(); showToast('Reloaded');
     } else {
-      // Use this user gesture to request permission
       const ok = await reconnectVault();
-      if (ok) { await loadFromVault(); renderAll(); showToast('✓ Reloaded'); }
-      else { showFirstRunSetup(); }
+      if (ok) { await loadFromVault(); renderAll(); showToast('✓ Vault reconnected'); }
+      else { showToast('No vault connected — tap ⚙ Settings to connect'); }
     }
   });
   document.getElementById('btn-settings').addEventListener('click', showSettings);
@@ -3116,18 +3224,19 @@ async function boot() {
   startTimers();
   renderAll();
 
-  // Attempt to restore vault handle from IndexedDB
+  // Attempt to restore vault handle from IndexedDB (optional — habit tracker folder)
   const state = await restoreVaultHandle();
   if (state === 'granted') {
     await loadFromVault();
     renderAll();
   } else if (state === 'needs-grant') {
     showReconnectBanner();
-  } else if (!LS.get('vaultFolderName')) {
-    // First ever launch
-    showFirstRunSetup();
   }
-  // else: no vault handle, but config in localStorage — still renders fine
+  // No vault = fine, app works from localStorage. User connects via Settings.
+
+  // Also restore log output handle and template handle
+  await restoreLogOutputHandle();
+  await restoreLogTemplateHandle();
 
   if (Notification.permission==='default')
     setTimeout(()=>Notification.requestPermission().then(p=>{ S.notifPermission=p; showBatteryBanner(); }), 2000);
