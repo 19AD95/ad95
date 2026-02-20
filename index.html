@@ -185,9 +185,9 @@
   /* tabs-container clips only horizontally */
   .tabs-container{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
   /* panels row slides left/right, does not clip vertically */
-  .tab-panels{display:flex;flex:1;min-height:0;width:100%;transform:translateX(0%);transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;align-items:flex-start}
-  /* each panel is full container height and scrolls on its own */
-  .tab-panel{flex:0 0 100%;width:100%;height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 20px 120px;display:flex;flex-direction:column;gap:16px;-webkit-overflow-scrolling:touch}
+  .tab-panels{display:flex;flex:1;min-height:0;width:300%;transform:translateX(0%);transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;align-items:flex-start}
+  /* each panel is full container height and scrolls on its own — 33.333% of 300% = 100% of container */
+  .tab-panel{flex:0 0 33.333%;width:33.333%;height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 20px 120px;display:flex;flex-direction:column;gap:16px;-webkit-overflow-scrolling:touch}
 
   /* ── SCHEDULE TAB ── */
   .sched-tab-list{display:flex;flex-direction:column;gap:6px}
@@ -227,7 +227,32 @@
   .add-sched-sheet input:focus{border-color:var(--accent)}
   .add-sched-sheet input::placeholder{color:var(--muted)}
 
-  /* ── SCHEDULE ITEM EDIT POPUP ── */
+  /* ── LOGS TAB ── */
+  .logs-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-shrink:0}
+  .logs-search{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 13px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s}
+  .logs-search:focus{border-color:var(--accent)}
+  .logs-search::placeholder{color:var(--muted)}
+  .logs-container{flex:1;overflow:hidden;position:relative;border:1px solid var(--border);border-radius:12px;background:var(--bg2)}
+  .logs-viewport{height:100%;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+  .logs-spacer{position:relative}
+  .log-item{position:absolute;left:0;right:0;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;display:flex;flex-direction:column;gap:3px}
+  .log-item:last-child{border-bottom:none}
+  .log-item:active,.log-item.hovered{background:var(--bg3)}
+  .log-item-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .log-item-time{font-size:11px;font-family:var(--font-mono);color:var(--accent);flex-shrink:0}
+  .log-item-filename{font-size:10px;font-family:var(--font-mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+  .log-item-preview{font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
+  .log-item-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+  .log-item-tag{font-size:10px;font-family:var(--font-mono);color:var(--accent);background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);border-radius:10px;padding:1px 7px}
+  .logs-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px;line-height:1.8;text-align:center;padding:20px}
+  .logs-status{font-size:11px;font-family:var(--font-mono);color:var(--muted);text-align:right;margin-top:6px;flex-shrink:0}
+  /* log detail modal */
+  .log-detail-body{font-size:13px;font-family:var(--font-mono);line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:55dvh;overflow-y:auto;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+  /* output format input */
+  .fmt-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 13px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;transition:border-color .15s;margin-top:6px}
+  .fmt-input:focus{border-color:var(--accent)}
+  .fmt-hint{font-size:10px;font-family:var(--font-mono);color:var(--muted);line-height:1.7;margin-top:5px}
+
   .sched-edit-popup{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:flex-end;justify-content:center}
   .sched-edit-sheet{background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 20px 32px;width:100%;max-width:480px;max-height:90dvh;overflow-y:auto}
   .time-picker-wrap{display:flex;gap:6px;align-items:center;justify-content:center;padding:8px 0 16px}
@@ -252,23 +277,6 @@
   .sched-edit-row .sched-item-time{font-size:13px;font-family:var(--font-mono);color:var(--accent);font-weight:700}
   .sched-edit-row .sched-item-act{font-size:14px;color:var(--text)}
   .sched-edit-row .sched-item-edit-hint{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
-
-  /* ── LOG TAB ── */
-  .log-tab-wrap{display:flex;flex-direction:column;height:100%;min-height:0}
-  .log-tab-toolbar{display:flex;align-items:center;gap:8px;padding:0 0 12px;flex-shrink:0}
-  .log-search{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s}
-  .log-search:focus{border-color:var(--accent)}
-  .log-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
-  .log-entry{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .15s}
-  .log-entry:active{border-color:var(--accent)}
-  .log-entry-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-  .log-entry-ts{font-size:11px;font-family:var(--font-mono);color:var(--accent);font-weight:700;flex-shrink:0}
-  .log-entry-tags{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0;overflow:hidden}
-  .log-tag{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.2);border-radius:12px;padding:1px 7px;font-size:10px;font-family:var(--font-mono);color:var(--accent);white-space:nowrap}
-  .log-entry-body{font-size:13px;color:var(--text);line-height:1.5;font-family:var(--font-mono);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-  .log-empty{text-align:center;padding:60px 20px;color:var(--muted);font-size:13px;font-family:var(--font-mono);line-height:1.8}
-  .log-load-more{width:100%;padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;font-family:var(--font-mono);cursor:pointer;margin-top:4px}
-  .log-entry-full{white-space:pre-wrap;-webkit-line-clamp:unset;display:block}
 </style>
 </head>
 <body>
@@ -293,7 +301,7 @@
     <div class="tab-panels" id="tab-panels">
       <div class="tab-panel" id="main-content"></div>
       <div class="tab-panel" id="schedule-tab"></div>
-      <div class="tab-panel" id="log-tab"></div>
+      <div class="tab-panel" id="logs-tab" style="overflow:hidden;padding:0"></div>
     </div>
   </div>
 </div>
@@ -1756,7 +1764,22 @@ async function showVaultBackups() {
 }
 
 
-// ── LOG TEMPLATE FILE ──────────────────────────────────────────────────────
+// ── OUTPUT FORMAT HELPER ────────────────────────────────────────────────────
+// Replaces Obsidian-style {{date:FORMAT}} tokens in a path template.
+// Supports: YYYY MM DD HH mm ss (and any combo e.g. YYYYMMDDHHmmss)
+function applyDateFormat(template, d) {
+  return template.replace(/\{\{date:([^}]+)\}\}/g, (_, fmt) => {
+    return fmt
+      .replace('YYYY', String(d.getFullYear()))
+      .replace('MM',   String(d.getMonth()+1).padStart(2,'0'))
+      .replace('DD',   String(d.getDate()).padStart(2,'0'))
+      .replace('HH',   String(d.getHours()).padStart(2,'0'))
+      .replace('mm',   String(d.getMinutes()).padStart(2,'0'))
+      .replace('ss',   String(d.getSeconds()).padStart(2,'0'));
+  });
+}
+
+
 async function pickLogTemplateFile() {
   try {
     // showOpenFilePicker lets user select a single .md file
@@ -1920,7 +1943,7 @@ async function writeLogEntry(logText) {
   // ── Build final content ──
   const newContent = open + yamlLines.join('\n') + close + body;
 
-  // ── Resolve output path and write new file ──
+  // ── Write to output folder as a new timestamped file ──
   if (!S.logOutputDirHandle) {
     showToast('No log output folder set — tap ⚙ Settings → Set Log Output Folder');
     return false;
@@ -1929,56 +1952,43 @@ async function writeLogEntry(logText) {
     const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
     if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
 
-    // ── Build folder path + base filename from user format pattern ──
-    // Default pattern: {{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}
-    const pattern = LS.get('logFilenamePattern') || '{{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}';
+    // ── Flexible output path from user format setting ──
+    // Default: {{date:YYYY}}/{{date:YYYYMMDDHHmmss}}
+    const fmt = LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
+    const basePath = applyDateFormat(fmt, now);
+    const parts = basePath.split('/');
+    const baseFilename = (parts.pop() || 'log') + '.md';
+    const subDirs = parts; // may be empty
 
-    function applyDateTokens(str, d) {
-      const pad = (n, l=2) => String(n).padStart(l, '0');
-      return str
-        .replace(/\{\{date:YYYY\}\}/g,       String(d.getFullYear()))
-        .replace(/\{\{date:YY\}\}/g,         String(d.getFullYear()).slice(2))
-        .replace(/\{\{date:MM\}\}/g,         pad(d.getMonth()+1))
-        .replace(/\{\{date:DD\}\}/g,         pad(d.getDate()))
-        .replace(/\{\{date:HH\}\}/g,         pad(d.getHours()))
-        .replace(/\{\{date:mm\}\}/g,         pad(d.getMinutes()))
-        .replace(/\{\{date:SS\}\}/g,         pad(d.getSeconds()))
-        .replace(/\{\{date:YYYYMMDD\}\}/g,   String(d.getFullYear())+pad(d.getMonth()+1)+pad(d.getDate()))
-        .replace(/\{\{date:YYYYMMDDHHMMSS\}\}/g, String(d.getFullYear())+pad(d.getMonth()+1)+pad(d.getDate())+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds()));
+    // Navigate / create subdirectory chain
+    let dir = S.logOutputDirHandle;
+    for (const seg of subDirs) {
+      if (!seg) continue;
+      dir = await dir.getDirectoryHandle(seg, { create: true });
     }
 
-    const resolved = applyDateTokens(pattern, now);
-    const slashIdx = resolved.lastIndexOf('/');
-    const subfolderPath = slashIdx !== -1 ? resolved.slice(0, slashIdx) : null;
-    const baseName     = slashIdx !== -1 ? resolved.slice(slashIdx + 1) : resolved;
-
-    // ── Create subfolder(s) if needed ──
-    let targetDir = S.logOutputDirHandle;
-    if (subfolderPath) {
-      for (const part of subfolderPath.split('/').filter(Boolean)) {
-        targetDir = await targetDir.getDirectoryHandle(part, { create: true });
-      }
-    }
-
-    // ── Deduplicate: if baseName.md already exists, append _1, _2 … ──
-    let filename = baseName + '.md';
-    let counter = 0;
+    // Auto-increment filename to avoid collisions
+    let filename = baseFilename;
+    let suffix = 0;
     while (true) {
       try {
-        await targetDir.getFileHandle(filename, { create: false });
-        // File exists — increment counter
-        counter++;
-        filename = baseName + '_' + counter + '.md';
+        await dir.getFileHandle(filename, { create: false });
+        // file exists — increment
+        suffix++;
+        const dotIdx = baseFilename.lastIndexOf('.');
+        const base = dotIdx !== -1 ? baseFilename.slice(0, dotIdx) : baseFilename;
+        const ext  = dotIdx !== -1 ? baseFilename.slice(dotIdx) : '';
+        filename = `${base}${String(suffix).padStart(2,'0')}${ext}`;
       } catch {
-        break; // File doesn't exist — safe to create
+        break; // file doesn't exist — use this name
       }
     }
 
-    const fh = await targetDir.getFileHandle(filename, { create: true });
+    const fh = await dir.getFileHandle(filename, { create: true });
     const writable = await fh.createWritable();
     await writable.write(newContent);
     await writable.close();
-    return filename;
+    return true;
   } catch(e) {
     showToast('Could not write log: ' + e.message);
     return false;
@@ -2055,8 +2065,8 @@ function showLogTextPopup() {
     if (!text) { showToast('Write something first'); return; }
     const btn = ov.querySelector('#log-ok');
     btn.disabled = true; btn.textContent = 'Saving…';
-    const result = await writeLogEntry(text);
-    if (result) {
+    const ok = await writeLogEntry(text);
+    if (ok) {
       showToast('✓ Log saved');
       close();
     } else {
@@ -2067,7 +2077,250 @@ function showLogTextPopup() {
   setTimeout(() => textarea.focus(), 100);
 }
 
-// ── SETTINGS MODAL ─────────────────────────────────────────────────────────
+// ── LOGS TAB ────────────────────────────────────────────────────────────────
+// Virtualized log viewer — handles thousands of files without DOM bloat.
+// Row height is fixed at 72px for predictable math.
+const LOG_ROW_H = 72;
+let _logsTabMounted = false;
+let _allLogs = [];      // [{filename, path, date, preview, tags, content}]
+let _filteredLogs = []; // subset after search
+let _logsLoading = false;
+let _logsSearchQ = '';
+let _logsViewport = null;
+let _logsSpacerEl = null;
+let _logsRenderedRange = { start: 0, end: 0 };
+let _logsNodes = {};    // index → DOM node (pooled)
+
+async function renderLogsTab() {
+  const tab = document.getElementById('logs-tab');
+  if (!tab) return;
+
+  // Build the scaffold once
+  if (!_logsTabMounted) {
+    _logsTabMounted = true;
+    tab.style.cssText = 'display:flex;flex-direction:column;gap:0;padding:12px 16px 80px;min-height:0';
+    tab.innerHTML = `
+      <div class="logs-toolbar">
+        <input class="logs-search" id="logs-search" type="search" placeholder="Search logs…" autocomplete="off"/>
+        <button class="icon-btn" id="logs-refresh" title="Reload logs">↺</button>
+      </div>
+      <div class="logs-container" id="logs-container">
+        <div class="logs-viewport" id="logs-viewport">
+          <div class="logs-spacer" id="logs-spacer"></div>
+        </div>
+      </div>
+      <div class="logs-status" id="logs-status"></div>`;
+
+    _logsViewport = tab.querySelector('#logs-viewport');
+    _logsSpacerEl = tab.querySelector('#logs-spacer');
+
+    // Make the container fill the remaining height
+    tab.querySelector('#logs-container').style.flex = '1';
+    tab.querySelector('#logs-container').style.minHeight = '0';
+
+    _logsViewport.addEventListener('scroll', () => _logsVirtualRender(), { passive: true });
+
+    tab.querySelector('#logs-search').addEventListener('input', e => {
+      _logsSearchQ = e.target.value.trim().toLowerCase();
+      _logsApplyFilter();
+    });
+    tab.querySelector('#logs-refresh').addEventListener('click', () => loadAllLogs());
+  }
+
+  if (!_logsLoading && _allLogs.length === 0) {
+    await loadAllLogs();
+  } else {
+    _logsVirtualRender();
+  }
+}
+
+async function loadAllLogs() {
+  if (_logsLoading) return;
+  _logsLoading = true;
+  _setLogsStatus('Loading…');
+
+  if (!S.logOutputDirHandle) {
+    _logsSetEmpty('No log output folder set.<br>Go to ⚙ Settings → Daily Log → Set Log Output Folder.');
+    _logsLoading = false; return;
+  }
+  try {
+    const perm = await S.logOutputDirHandle.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') {
+      const p2 = await S.logOutputDirHandle.requestPermission({ mode: 'read' });
+      if (p2 !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
+    }
+  } catch { _logsSetEmpty('Permission error.'); _logsLoading = false; return; }
+
+  const entries = [];
+  await _scanLogDir(S.logOutputDirHandle, '', entries);
+
+  // Sort newest first
+  entries.sort((a, b) => b.filename.localeCompare(a.filename));
+  _allLogs = entries;
+  _logsApplyFilter();
+  _logsLoading = false;
+}
+
+// Recursively scan a directory for .md files
+async function _scanLogDir(dirHandle, prefix, out) {
+  try {
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind === 'directory') {
+        await _scanLogDir(entry, prefix ? prefix + '/' + entry.name : entry.name, out);
+      } else if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+        const path = prefix ? prefix + '/' + entry.name : entry.name;
+        // Lazy: only read content when item is rendered (store handle for later)
+        out.push({ filename: entry.name, path, handle: entry, preview: null, tags: [], loaded: false });
+      }
+    }
+  } catch {}
+}
+
+function _logsApplyFilter() {
+  if (!_logsSearchQ) {
+    _filteredLogs = _allLogs;
+  } else {
+    const q = _logsSearchQ;
+    _filteredLogs = _allLogs.filter(l =>
+      l.path.toLowerCase().includes(q) ||
+      (l.preview || '').toLowerCase().includes(q) ||
+      l.tags.some(t => t.toLowerCase().includes(q))
+    );
+  }
+  _logsNodes = {}; // clear pool on filter change
+  _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
+  if (_filteredLogs.length === 0) {
+    _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : 'No log files found in output folder.');
+    return;
+  }
+  // Remove empty state if present
+  const emp = _logsViewport?.querySelector('.logs-empty');
+  if (emp) emp.remove();
+  // Set spacer height for virtual scroll
+  if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
+  _logsVirtualRender(true);
+}
+
+function _logsSetEmpty(msg) {
+  if (!_logsViewport) return;
+  _logsViewport.querySelectorAll('.log-item').forEach(n => n.remove());
+  _logsNodes = {};
+  if (_logsSpacerEl) _logsSpacerEl.style.height = '0';
+  let emp = _logsViewport.querySelector('.logs-empty');
+  if (!emp) { emp = document.createElement('div'); emp.className = 'logs-empty'; _logsViewport.appendChild(emp); }
+  emp.innerHTML = msg;
+  _setLogsStatus('');
+}
+
+function _setLogsStatus(msg) {
+  const el = document.getElementById('logs-status');
+  if (el) el.textContent = msg;
+}
+
+function _logsVirtualRender(force) {
+  if (!_logsViewport || !_logsSpacerEl) return;
+  if (_filteredLogs.length === 0) return;
+
+  const scrollTop = _logsViewport.scrollTop;
+  const height = _logsViewport.clientHeight || 400;
+  const overscan = 8; // extra rows above/below viewport
+  const start = Math.max(0, Math.floor(scrollTop / LOG_ROW_H) - overscan);
+  const end   = Math.min(_filteredLogs.length - 1, Math.ceil((scrollTop + height) / LOG_ROW_H) + overscan);
+
+  if (!force && start === _logsRenderedRange.start && end === _logsRenderedRange.end) return;
+  _logsRenderedRange = { start, end };
+
+  // Remove nodes outside range
+  Object.keys(_logsNodes).forEach(i => {
+    const ii = parseInt(i);
+    if (ii < start || ii > end) { _logsNodes[i].remove(); delete _logsNodes[i]; }
+  });
+
+  // Add nodes in range
+  for (let i = start; i <= end; i++) {
+    if (_logsNodes[i]) continue;
+    const log = _filteredLogs[i];
+    const node = document.createElement('div');
+    node.className = 'log-item';
+    node.style.top = (i * LOG_ROW_H) + 'px';
+    node.dataset.idx = i;
+    _renderLogNode(node, log);
+    _logsSpacerEl.appendChild(node);
+    _logsNodes[i] = node;
+
+    // Lazy-load content for search highlighting
+    if (!log.loaded) {
+      _loadLogPreview(log).then(() => {
+        if (_logsNodes[i] === node) _renderLogNode(node, log);
+      });
+    }
+    node.addEventListener('click', () => _openLogDetail(log));
+  }
+}
+
+async function _loadLogPreview(log) {
+  if (log.loaded) return;
+  log.loaded = true;
+  try {
+    const file = await log.handle.getFile();
+    const text = await file.text();
+    log._fullText = text;
+    // Extract log field from frontmatter
+    const logM = text.match(/^log:\s*(.+)/m);
+    log.preview = logM ? logM[1].replace(/^["']|["']$/g, '').trim() : text.replace(/^---[\s\S]*?---\n?/,'').trim().slice(0,120);
+    // Extract tags
+    const tagBlock = text.match(/^tags:\n([\s\S]*?)(?=^[a-zA-Z]|\n---\n|$)/m);
+    if (tagBlock) log.tags = (tagBlock[1].match(/- (\w+)/g) || []).map(t => t.replace('- ',''));
+    // Extract timestamp from filename for display
+    log.dateLabel = _filenameToLabel(log.filename);
+  } catch { log.preview = log.filename; }
+}
+
+function _filenameToLabel(name) {
+  // Try to extract YYYYMMDDHHmmss pattern
+  const m = name.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (m) {
+    const [,Y,Mo,D,H,Min] = m;
+    const d = new Date(+Y,+Mo-1,+D,+H,+Min);
+    return d.toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+  // Fallback: YYYY-MM-DD
+  const m2 = name.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return `${m2[2]}/${m2[3]}/${m2[1]}`;
+  return name.replace('.md','');
+}
+
+function _renderLogNode(node, log) {
+  const time = log.dateLabel || _filenameToLabel(log.filename);
+  const preview = (log.preview || log.filename).slice(0, 90);
+  const tags = log.tags.slice(0, 3).map(t => `<span class="log-item-tag">#${t}</span>`).join('');
+  node.innerHTML = `
+    <div class="log-item-header">
+      <span class="log-item-time">${time}</span>
+      <span class="log-item-filename">${log.path}</span>
+    </div>
+    <div class="log-item-preview">${preview}</div>
+    ${tags ? `<div class="log-item-tags">${tags}</div>` : ''}`;
+}
+
+async function _openLogDetail(log) {
+  if (!log.loaded) await _loadLogPreview(log);
+  const ov = document.createElement('div'); ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal" style="max-height:88dvh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-bottom:4px">${log.dateLabel || log.filename}</div>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:14px">${log.path}</div>
+    ${log.tags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${log.tags.map(t=>`<span class="log-item-tag">#${t}</span>`).join('')}</div>` : ''}
+    <div class="log-detail-body">${(log._fullText || log.preview || '').replace(/</g,'&lt;')}</div>
+    <button class="btn btn-ghost" style="width:100%" id="ld-close">Close</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close = () => document.body.removeChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  ov.querySelector('#ld-close').addEventListener('click', close);
+}
+
+
 function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 19) ? 'light' : 'dark'; }
 function applyTheme(t) {
   LS.set('theme', t);
@@ -2194,14 +2447,13 @@ function showSettings() {
         <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'SET':'UNSET'}</span>
       </div>
       <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-output">Set Log Output Folder</button>
-      <div style="margin-top:12px">
-        <div class="s-label" style="margin-bottom:6px">📂 Filename Pattern</div>
-        <input type="text" id="s-log-pattern"
-          value="${LS.get('logFilenamePattern') || '{{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}'}"
-          placeholder="{{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}"
-          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none"
-          autocomplete="off" spellcheck="false"/>
-        <div class="s-sub" style="margin-top:5px">Tokens: {{date:YYYY}} {{date:MM}} {{date:DD}} {{date:HH}} {{date:mm}} {{date:SS}} {{date:YYYYMMDDHHMMSS}}<br>Subfolders via /  e.g. {{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}</div>
+      <div class="s-row" style="margin-top:10px;flex-direction:column;align-items:stretch;gap:6px">
+        <div>
+          <div class="s-label">📂 Output File Format</div>
+          <div class="s-sub">Obsidian-style date tokens. Use / for subfolders.</div>
+        </div>
+        <input class="fmt-input" id="s-log-fmt" type="text" value="${LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}'}" placeholder="{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}" autocomplete="off" spellcheck="false"/>
+        <div class="fmt-hint">Tokens: {{date:YYYY}} {{date:MM}} {{date:DD}} {{date:HH}} {{date:mm}} {{date:ss}}<br>Example → <span id="s-fmt-preview"></span></div>
       </div>
     </div>
 
@@ -2231,7 +2483,23 @@ function showSettings() {
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
   ov.querySelector('#s-set-log-template').addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
   ov.querySelector('#s-set-log-output').addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
-  ov.querySelector('#s-log-pattern')?.addEventListener('change', e => LS.set('logFilenamePattern', e.target.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHMMSS}}'));
+
+  // ── Output format live preview + save ──
+  const fmtIn = ov.querySelector('#s-log-fmt');
+  const fmtPrev = ov.querySelector('#s-fmt-preview');
+  function updateFmtPreview() {
+    const raw = fmtIn.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
+    try {
+      const preview = applyDateFormat(raw, new Date()) + '.md';
+      fmtPrev.textContent = preview;
+      fmtPrev.style.color = 'var(--accent)';
+    } catch { fmtPrev.textContent = 'invalid format'; fmtPrev.style.color = 'var(--danger)'; }
+  }
+  updateFmtPreview();
+  fmtIn.addEventListener('input', () => {
+    updateFmtPreview();
+    LS.set('logOutputFormat', fmtIn.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}');
+  });
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
   ov.querySelector('#s-install').addEventListener('click',()=>{ close(); showInstallGuide(); });
   // Battery optimization buttons
@@ -2513,210 +2781,6 @@ function showBatteryBanner() {
 }
 
 
-// ── LOG TAB ───────────────────────────────────────────────────────────────────
-// Reads all .md files from the output folder (recursively, depth=2 for year subfolders)
-// Parses YAML frontmatter for: date, time, log, tags
-// Renders a virtualised/paginated list — 40 entries per page
-const LOG_PAGE_SIZE = 40;
-let _logEntries = [];       // all parsed entries, newest-first
-let _logFiltered = [];      // after search filter
-let _logPage = 0;
-let _logSearchQuery = '';
-
-async function scanLogFiles(dirHandle, depth) {
-  const entries = [];
-  try {
-    for await (const entry of dirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md')) {
-        try {
-          const file = await entry.getFile();
-          const text = await file.text();
-          const parsed = parseLogFile(text, entry.name, file.lastModified);
-          if (parsed) entries.push(parsed);
-        } catch {}
-      } else if (entry.kind === 'directory' && depth > 0) {
-        const sub = await dirHandle.getDirectoryHandle(entry.name);
-        const subEntries = await scanLogFiles(sub, depth - 1);
-        entries.push(...subEntries);
-      }
-    }
-  } catch {}
-  return entries;
-}
-
-function parseLogFile(text, filename, lastModified) {
-  const fm = text.match(/^---
-([\s\S]+?)
----/);
-  if (!fm) return null;
-  const yaml = fm[1];
-
-  // Extract log text
-  const logM = yaml.match(/^log:\s*(.+)$/m);
-  const logText = logM ? logM[1].replace(/^"|"$/g, '').trim() : '';
-  if (!logText) return null;
-
-  // Extract date/time
-  const dateM = yaml.match(/^(?:date|Date):\s*(.+)$/m);
-  const timeM = yaml.match(/^(?:time|Time):\s*(.+)$/m);
-
-  // Parse timestamp — prefer frontmatter date, fallback to filename, then lastModified
-  let ts = lastModified;
-  if (dateM) {
-    const d = dateM[1].trim().replace(/^"|"$/g,'');
-    const t = timeM ? timeM[1].trim().replace(/^"|"$/g,'') : '00:00';
-    const parsed = new Date(d + ' ' + t);
-    if (!isNaN(parsed)) ts = parsed.getTime();
-  } else {
-    // Try to parse from filename like 20260221103300
-    const m = filename.match(/(\d{14})/);
-    if (m) {
-      const s = m[1];
-      ts = new Date(
-        s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8)+'T'+
-        s.slice(8,10)+':'+s.slice(10,12)+':'+s.slice(12,14)
-      ).getTime() || lastModified;
-    }
-  }
-
-  // Extract tags
-  const tags = [];
-  const tagsBlockM = yaml.match(/^tags:\s*
-((?:\s+- .+
-?)+)/m);
-  if (tagsBlockM) {
-    tagsBlockM[1].split('
-').forEach(l => {
-      const m = l.match(/^\s+- (.+)/);
-      if (m) tags.push(m[1].trim());
-    });
-  }
-
-  return { ts, logText, tags, filename };
-}
-
-function fmtLogDate(ts) {
-  const d = new Date(ts);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  const isYesterday = d.toDateString() === new Date(now - 86400000).toDateString();
-  const pad = n => String(n).padStart(2,'0');
-  const time = pad(d.getHours())+':'+pad(d.getMinutes());
-  if (isToday) return 'Today ' + time;
-  if (isYesterday) return 'Yesterday ' + time;
-  return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+time;
-}
-
-async function renderLogTab() {
-  const el = document.getElementById('log-tab');
-  if (!el) return;
-
-  if (!S.logOutputDirHandle) {
-    el.innerHTML = `<div class="log-empty">📂 No log output folder set<br><small>Go to ⚙ Settings → Daily Log → Set Log Output Folder</small></div>`;
-    return;
-  }
-
-  // Show loading state
-  el.innerHTML = `<div class="log-empty">Loading logs…</div>`;
-
-  // Reconnect if needed
-  try {
-    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'read' });
-    if (perm !== 'granted') {
-      el.innerHTML = `<div class="log-empty">🔒 Permission needed<br><small>Tap ↺ to reconnect</small></div>`;
-      return;
-    }
-  } catch {
-    el.innerHTML = `<div class="log-empty">⚠ Could not access log folder</div>`;
-    return;
-  }
-
-  // Scan files (depth 2 — handles year/month subfolders)
-  const allEntries = await scanLogFiles(S.logOutputDirHandle, 2);
-  allEntries.sort((a, b) => b.ts - a.ts); // newest first
-  _logEntries = allEntries;
-  _logPage = 0;
-
-  paintLogTab(el);
-}
-
-function paintLogTab(el) {
-  if (!el) el = document.getElementById('log-tab');
-  if (!el) return;
-
-  const query = _logSearchQuery.toLowerCase().trim();
-  _logFiltered = query
-    ? _logEntries.filter(e =>
-        e.logText.toLowerCase().includes(query) ||
-        e.tags.some(t => t.toLowerCase().includes(query))
-      )
-    : _logEntries;
-
-  const total = _logFiltered.length;
-  const page = _logPage;
-  const slice = _logFiltered.slice(0, (page + 1) * LOG_PAGE_SIZE);
-
-  let entriesHTML = '';
-  if (!total) {
-    entriesHTML = `<div class="log-empty">${query ? '🔍 No results for "' + query + '"' : '📭 No log entries yet<br><small>Tap 📝 on Dashboard to write one</small>'}</div>`;
-  } else {
-    entriesHTML = slice.map((e, i) => {
-      const tagsHTML = e.tags.slice(0,4).map(t => `<span class="log-tag">#${t}</span>`).join('') +
-        (e.tags.length > 4 ? `<span class="log-tag">+${e.tags.length-4}</span>` : '');
-      const safeLog = e.logText.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return `<div class="log-entry" data-log-idx="${i}">
-        <div class="log-entry-header">
-          <span class="log-entry-ts">${fmtLogDate(e.ts)}</span>
-          <div class="log-entry-tags">${tagsHTML}</div>
-        </div>
-        <div class="log-entry-body">${safeLog}</div>
-      </div>`;
-    }).join('');
-
-    if (slice.length < total) {
-      entriesHTML += `<button class="log-load-more" id="log-load-more">Load more (${total - slice.length} remaining)</button>`;
-    }
-  }
-
-  el.innerHTML = `<div class="log-tab-wrap">
-    <div class="log-tab-toolbar">
-      <input class="log-search" id="log-search-input" placeholder="Search logs…" value="${_logSearchQuery.replace(/"/g,'&quot;')}" autocomplete="off" spellcheck="false"/>
-      <button class="icon-btn" id="log-refresh-btn" title="Refresh">↺</button>
-    </div>
-    <div class="log-list" id="log-list-inner">${entriesHTML}</div>
-  </div>`;
-
-  // Wire search
-  el.querySelector('#log-search-input')?.addEventListener('input', e => {
-    _logSearchQuery = e.target.value;
-    _logPage = 0;
-    paintLogTab(el);
-    // Re-focus with caret at end
-    const inp = el.querySelector('#log-search-input');
-    if (inp) { const v = inp.value; inp.value = ''; inp.value = v; inp.focus(); }
-  });
-
-  // Wire refresh
-  el.querySelector('#log-refresh-btn')?.addEventListener('click', () => {
-    _logEntries = []; _logPage = 0; _logSearchQuery = '';
-    renderLogTab();
-  });
-
-  // Wire load more
-  el.querySelector('#log-load-more')?.addEventListener('click', () => {
-    _logPage++;
-    paintLogTab(el);
-  });
-
-  // Wire entry expand
-  el.querySelectorAll('.log-entry').forEach(row => {
-    row.addEventListener('click', () => {
-      const body = row.querySelector('.log-entry-body');
-      body.classList.toggle('log-entry-full');
-    });
-  });
-}
-
 function buildSkeleton() {
   document.getElementById('main-content').innerHTML=`
     <div class="card" id="card-countdown" style="animation-delay:0s">
@@ -2757,6 +2821,8 @@ function buildSkeleton() {
 
   const panels = document.getElementById('tab-panels');
   panels.style.transform = 'translateX(0%)';
+  // With 3 panels, each panel is 33.333% wide so translateX needs matching values
+  // (handled in switchTab)
 
   let activeTab = 0;
   let editMode = false;
@@ -2815,8 +2881,11 @@ function buildSkeleton() {
 
   function switchTab(idx) {
     if (idx === activeTab) return;
-    // Auto-close habit edit mode when switching away from dashboard
-    if (S._habitEditMode) { S._habitEditMode = false; renderHabitBars(); }
+    // Auto-close habit edit mode when switching to schedule tab
+    if (S._habitEditMode) {
+      S._habitEditMode = false;
+      renderHabitBars();
+    }
     // Auto-commit schedule edits when leaving schedule tab
     if (activeTab === 1 && editMode) {
       commitEdits(false);
@@ -2826,11 +2895,11 @@ function buildSkeleton() {
       addFab.classList.remove('visible');
     }
     activeTab = idx;
-    panels.style.transform = `translateX(${-idx * 100}%)`;
+    panels.style.transform = `translateX(${-idx * (100/3)}%)`;
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
     fab.style.display = idx === 1 ? 'flex' : 'none';
     if (idx === 1) renderScheduleTab(false);
-    if (idx === 2) renderLogTab();
+    if (idx === 2) renderLogsTab();
   }
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
