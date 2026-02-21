@@ -66,13 +66,14 @@
   .snoozed-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:rgba(255,170,0,.12);border:1px solid rgba(255,170,0,.3);border-radius:20px;font-size:11px;font-family:var(--font-mono);color:var(--warn)}
 
   /* habits */
-  .habits-grid{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:4px 2px 8px}
-  .habit-col{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px}
-  .habit-bar-track{width:26px;height:90px;background:var(--bg3);border-radius:8px;position:relative;overflow:hidden;border:1px solid var(--border)}
-  .habit-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:6px;background:linear-gradient(to top,var(--accent),rgba(0,255,136,.4));transition:height .4s cubic-bezier(.34,1.56,.64,1)}
-  .habit-bar-fill.complete{background:linear-gradient(to top,var(--accent),#00ffaa)}
-  .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1;width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2)}
-  .habit-icon:active{transform:scale(1.3)}
+  .habits-grid{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:4px 2px 8px}
+  .habit-col{display:flex;flex-direction:row;align-items:center;gap:5px;cursor:pointer}
+  .habit-bar-track{width:6px;height:52px;background:var(--bg3);border-radius:4px;position:relative;overflow:hidden;border:1px solid var(--border);flex-shrink:0}
+  .habit-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;background:linear-gradient(to top,var(--accent),rgba(0,255,136,.5));transition:height .4s cubic-bezier(.34,1.56,.64,1)}
+  .habit-bar-fill.complete{background:var(--accent)}
+  .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2);position:relative;flex-shrink:0}
+  .habit-icon.complete{border-color:rgba(0,255,136,.4);background:rgba(0,255,136,.06)}
+  .habit-icon:active{transform:scale(1.25)}
   .habit-val{font-size:9px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);padding:1px 4px;border-radius:10px}
   .habit-val.complete{color:var(--accent)}
   /* habit edit mode */
@@ -192,12 +193,12 @@
   .tab-btn{flex:1;padding:12px 8px;font-size:12px;font-family:var(--font-mono);font-weight:600;letter-spacing:.5px;color:var(--muted);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase}
   .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
   .tab-btn:active{background:var(--bg3)}
-  /* tabs-container clips only horizontally */
   .tabs-container{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-  /* panels row slides left/right, does not clip vertically */
-  .tab-panels{display:flex;flex:1;min-height:0;width:300%;transform:translateX(0%);transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;align-items:stretch}
-  /* each panel is full container height and scrolls on its own — 33.333% of 300% = 100% of container */
-  .tab-panel{flex:0 0 33.333%;width:33.333%;height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 20px 120px;display:flex;flex-direction:column;gap:16px;-webkit-overflow-scrolling:touch}
+  .tab-panels{position:relative;flex:1;min-height:0;overflow:hidden}
+  .tab-panel{position:absolute;top:0;left:0;width:100%;height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 20px 120px;display:flex;flex-direction:column;gap:16px;-webkit-overflow-scrolling:touch;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);will-change:transform}
+  .tab-panel.active{transform:translateX(0%)}
+  .tab-panel.left{transform:translateX(-100%)}
+  .tab-panel.dragging{transition:none!important}
 
   /* ── SCHEDULE TAB ── */
   .sched-tab-list{display:flex;flex-direction:column;gap:6px}
@@ -287,6 +288,55 @@
   .sched-edit-row .sched-item-time{font-size:13px;font-family:var(--font-mono);color:var(--accent);font-weight:700}
   .sched-edit-row .sched-item-act{font-size:14px;color:var(--text)}
   .sched-edit-row .sched-item-edit-hint{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
+
+  /* ── SCHEDULE VIEW TOGGLE ── */
+  .sched-view-toggle{display:flex;background:var(--bg3);border-radius:10px;padding:3px;gap:2px;margin-bottom:12px;flex-shrink:0}
+  .sched-view-btn{flex:1;padding:7px 12px;border-radius:7px;border:none;background:transparent;color:var(--muted);font-size:11px;font-family:var(--font-mono);font-weight:700;cursor:pointer;transition:all .18s;letter-spacing:.3px}
+  .sched-view-btn.active{background:var(--bg2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.22)}
+
+  /* ── CALENDAR VIEW ── */
+  .cal-view-wrap{display:flex;flex-direction:column;gap:0;flex:1;min-height:0}
+  .cal-grid-wrap{flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 12px 10px;margin-bottom:10px}
+  .cal-grid-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .cal-nav-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all .12s;flex-shrink:0}
+  .cal-nav-btn:active{background:var(--border)}
+  .cal-month-label{font-size:15px;font-weight:800;font-family:var(--font-mono);letter-spacing:-.3px}
+  .cal-day-headers{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
+  .cal-day-hdr{text-align:center;font-size:9px;font-family:var(--font-mono);color:var(--muted);padding:2px 0;font-weight:700;letter-spacing:.5px}
+  .cal-days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;position:relative;min-height:34px;max-height:44px}
+  .cal-day:active{transform:scale(.88)}
+  .cal-day.empty{cursor:default;pointer-events:none;background:transparent!important}
+  .cal-day-num{font-size:12px;font-weight:700;font-family:var(--font-mono);line-height:1;z-index:1;position:relative}
+  .cal-day-dot{width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,.7);margin-top:2px;z-index:1;position:relative;flex-shrink:0}
+  .cal-day.today-ring{box-shadow:inset 0 0 0 2px var(--accent)}
+  .cal-day.selected-day{box-shadow:inset 0 0 0 2.5px #fff,inset 0 0 0 4px rgba(255,255,255,.3)}
+  /* Heat gradient: 0=free(transparent)→6=packed(red) */
+  .cal-heat-0{background:transparent;color:var(--muted)}
+  .cal-heat-1{background:rgba(0,255,136,.12);color:var(--text)}
+  .cal-heat-2{background:rgba(0,220,120,.28);color:var(--text)}
+  .cal-heat-3{background:rgba(60,200,80,.5);color:#fff}
+  .cal-heat-4{background:rgba(200,200,0,.5);color:#1a1a00}
+  .cal-heat-5{background:rgba(255,140,0,.55);color:#fff}
+  .cal-heat-6{background:rgba(255,48,48,.6);color:#fff}
+  /* Bottom half sub-tabs */
+  .cal-bottom{display:flex;flex-direction:column;flex:1;min-height:180px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .cal-sub-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg)}
+  .cal-sub-tab{flex:1;padding:9px 4px;font-size:10px;font-family:var(--font-mono);font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .18s}
+  .cal-sub-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .cal-sub-tab:active{background:var(--bg3)}
+  .cal-sub-content{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 12px 16px;-webkit-overflow-scrolling:touch}
+  .cal-sub-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);margin-bottom:5px;transition:background .12s;cursor:pointer}
+  .cal-sub-item.now-item{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.07)}
+  .cal-sub-item.past-item{opacity:.38}
+  .cal-sub-item:active{background:var(--border)}
+  .cal-sub-time{font-size:11px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
+  .cal-sub-act{font-size:13px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
+  .cal-sub-repeat{font-size:9px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .cal-sub-empty{text-align:center;padding:28px 16px;color:var(--muted);font-size:12px;font-family:var(--font-mono);line-height:1.7}
+  .cal-selected-bar{padding:7px 12px 5px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--font-mono);color:var(--accent);display:flex;align-items:center;gap:6px;flex-shrink:0;background:rgba(0,255,136,.04)}
+  .cal-heat-legend{display:flex;gap:4px;align-items:center;font-size:9px;font-family:var(--font-mono);color:var(--muted);margin-top:8px;flex-wrap:wrap}
+  .cal-heat-swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -305,13 +355,11 @@
   <div class="tabs-container">
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="0">Dashboard</button>
-      <button class="tab-btn" data-tab="1">Schedule</button>
-      <button class="tab-btn" data-tab="2">Logs</button>
+      <button class="tab-btn" data-tab="1">Time Blocks</button>
     </div>
     <div class="tab-panels" id="tab-panels">
       <div class="tab-panel" id="main-content"></div>
       <div class="tab-panel" id="schedule-tab"></div>
-      <div class="tab-panel" id="logs-tab" style="overflow:hidden;padding:0"></div>
     </div>
   </div>
 </div>
@@ -332,11 +380,12 @@ const S = {
   logDirHandle: null,
   logTemplateHandle: null,
   logOutputDirHandle: null,
+  eventsDirHandle: null,
   _pendingHandle: null,
   scheduleOpen: false,
   notifPermission: Notification.permission,
   // Per-session permission cache — requestPermission only called once per handle
-  _permGranted: { logTemplate: false, logOutput: false },
+  _permGranted: { logTemplate: false, logOutput: false, events: false },
 };
 
 const LS = {
@@ -574,11 +623,26 @@ function parseMd(text) {
     if (sm) {
       let cur = null;
       for (const line of sm[1].split('\n')) {
-        const tM = line.match(/time:\s*["']?(.+?)["']?\s*$/);
-        const aM = line.match(/activity:\s*["']?(.+?)["']?\s*$/);
-        if (tM) cur = { time: tM[1].trim() };
-        else if (aM && cur) { cur.activity = aM[1].trim(); schedule.push(cur); cur = null; }
+        const tM = line.match(/^\s*-?\s*time:\s*["']?(.+?)["']?\s*$/);
+        const aM = line.match(/^\s+activity:\s*["']?(.+?)["']?\s*$/);
+        const rM = line.match(/^\s+repeat:\s*(\w+)/);
+        const cM = line.match(/^\s+createdOn:\s*["']?(.+?)["']?\s*$/);
+        const dM = line.match(/^\s+customDates:\s*["']?(.+?)["']?\s*$/);
+        const lmM = line.match(/^\s+limitFrom:\s*["']?(.+?)["']?\s*$/);
+        const ltM = line.match(/^\s+limitTo:\s*["']?(.+?)["']?\s*$/);
+        const ptM = line.match(/^\s+perDateTimes:\s*["']?(.+?)["']?\s*$/);
+        if (tM) {
+          if (cur && cur.activity) schedule.push(cur);
+          cur = { time: tM[1].trim() };
+        } else if (aM && cur) { cur.activity = aM[1].trim(); }
+        else if (rM && cur) { cur.repeat = rM[1].trim(); }
+        else if (cM && cur) { cur.createdOn = cM[1].trim(); }
+        else if (dM && cur) { try { cur.customDates = JSON.parse(dM[1].trim()); } catch { cur.customDates = dM[1].split(',').map(d=>d.trim()); } }
+        else if (lmM && cur) { cur.limitFrom = lmM[1].trim(); }
+        else if (ltM && cur) { cur.limitTo = ltM[1].trim(); }
+        else if (ptM && cur) { try { cur.perDateTimes = JSON.parse(ptM[1].trim()); } catch {} }
       }
+      if (cur && cur.activity) schedule.push(cur);
     }
     const habitDefinitions = {};
     const hm = yaml.match(/^habitDefinitions:\s*\n([\s\S]*?)(?=^[a-zA-Z]\w*:)/m);
@@ -644,8 +708,53 @@ function decrementHabit(key) {
 }
 
 // ── SCHEDULE HELPERS ───────────────────────────────────────────────────────
+// Returns only schedule items that apply to today based on their repeat field
+function getTodaySchedule() {
+  const all = S.config?.schedule || [];
+  const now = new Date();
+  const todayISO = now.toISOString().slice(0,10); // YYYY-MM-DD
+  const dow = now.getDay(); // 0=Sun
+  const dom = now.getDate();
+
+  return all.filter(item => {
+    // Check limit range first
+    if (item.limitFrom && todayISO < item.limitFrom) return false;
+    if (item.limitTo && todayISO > item.limitTo) return false;
+
+    const r = item.repeat || 'daily'; // default: daily (backward compat)
+    if (r === 'daily') return true;
+    if (r === 'off') return false;
+    if (r === 'weekly') {
+      // item must have a createdOn date — match same weekday
+      if (!item.createdOn) return true; // legacy: always show
+      const created = new Date(item.createdOn + 'T00:00:00');
+      return created.getDay() === dow;
+    }
+    if (r === 'monthly') {
+      if (!item.createdOn) return true;
+      const created = new Date(item.createdOn + 'T00:00:00');
+      return created.getDate() === dom;
+    }
+    if (r === 'yearly') {
+      if (!item.createdOn) return true;
+      const created = new Date(item.createdOn + 'T00:00:00');
+      return created.getMonth() === now.getMonth() && created.getDate() === dom;
+    }
+    if (r === 'once') {
+      // One-time entry: only show on its createdOn date
+      return item.createdOn === todayISO;
+    }
+    if (r === 'custom') {
+      // Custom dates: show only if today is in the list
+      const dates = item.customDates || [];
+      return dates.includes(todayISO);
+    }
+    return true;
+  });
+}
+
 function getCurNext() {
-  const now=new Date(), sc=S.config?.schedule||[];
+  const now=new Date(), sc=getTodaySchedule();
   let cur=-1, next=-1;
   for (let i=0;i<sc.length;i++) {
     if (schedDate(sc[i].time)<=now) cur=i;
@@ -662,11 +771,10 @@ function detectHabit(activity) {
 // ── ALARM CHECK + MODAL ────────────────────────────────────────────────────
 function checkAlarms() {
   if (!S.config) return;
-  const now=Date.now(), sc=S.config.schedule;
+  const now=Date.now(), sc=getTodaySchedule();
   for (const idx in S.snooze) {
     if (S.snooze[idx]<=now) {
       delete S.snooze[idx]; const i=parseInt(idx);
-      // Show full alarm modal (with notification) for resumed snooze
       if (!S.shownAlarms[i]||(now-S.shownAlarms[i])>30000) { showAlarmModal(i); return; }
     }
   }
@@ -692,7 +800,7 @@ function syncAlarmsToSW() {
   const alarms = [];
   const now = Date.now();
 
-  S.config.schedule.forEach((item, idx) => {
+  getTodaySchedule().forEach((item, idx) => {
     const fireAt = schedDate(item.time).getTime();
     if (fireAt <= now) return; // already past
 
@@ -819,56 +927,139 @@ function playBeep() {
   } catch{}
 }
 
+
 // ── RENDER — COUNTDOWN ─────────────────────────────────────────────────────
 function renderCountdown() {
-  const el=document.getElementById('card-countdown'); if (!el) return;
-  const body=el.querySelector('.card-body');
-  if (!S.config?.schedule?.length) { body.innerHTML=`<div class="empty-state">No schedule loaded</div>`; return; }
+  const left = document.getElementById('countdown-left'); if (!left) return;
+  const todaySched = getTodaySchedule();
+  if (!todaySched.length) {
+    left.innerHTML = `<div class="cw"><div class="empty-state" style="padding:8px 0;font-size:13px">No schedule today</div></div>`;
+    renderEventPanel(); return;
+  }
   for (const idx in S.snooze) {
-    const until=S.snooze[idx];
-    if (until>Date.now()) {
-      const item=S.config.schedule[parseInt(idx)];
-      body.innerHTML=`<div class="cw"><span class="snoozed-badge">🔕 Snoozed</span>
-        <div class="ca" style="margin-top:8px">${item.activity}</div>
+    const until = S.snooze[idx];
+    if (until > Date.now()) {
+      const item = todaySched[parseInt(idx)];
+      left.innerHTML = `<div class="cw"><span class="snoozed-badge">🔕 Snoozed</span>
+        <div class="ca" style="margin-top:8px">${item?.activity||''}</div>
         <div class="cm"><span class="cl">Resumes ${new Date(until).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
         <span class="ct" id="snooze-timer">${fmtMs(until-Date.now())}</span></div></div>`;
-      return;
+      renderEventPanel(); return;
     }
   }
-  const {cur,next}=getCurNext();
-  if (cur===-1&&next===-1) { body.innerHTML=`<div class="empty-state">✨ All done for today!</div>`; return; }
-  if (cur===-1) {
-    const ni=S.config.schedule[next]; const rem=schedDate(ni.time)-Date.now();
-    body.innerHTML=`<div class="cw"><div class="ca">Up next: ${ni.activity}</div>
+  const {cur,next} = getCurNext();
+  if (cur===-1 && next===-1) {
+    left.innerHTML = `<div class="cw"><div style="font-size:13px;color:var(--accent);font-family:var(--font-mono)">✨ All done!</div></div>`;
+    renderEventPanel(); return;
+  }
+  if (cur === -1) {
+    const ni = todaySched[next]; const rem = schedDate(ni.time) - Date.now();
+    left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">Up next: ${ni.activity}</div>
       <div class="cm"><span class="cl">Starts in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
       <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:0%"></div></div></div>`;
-    return;
+    renderEventPanel(); return;
   }
-  const ci=S.config.schedule[cur];
-  if (next===-1) {
-    body.innerHTML=`<div class="cw"><div class="ca">${ci.activity}</div>
-      <div style="font-size:12px;font-family:var(--font-mono);color:var(--accent);margin-top:4px">✨ Final activity</div></div>`;
-    return;
+  const ci = todaySched[cur];
+  if (next === -1) {
+    left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
+      <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-top:4px">✨ Final activity</div></div>`;
+    renderEventPanel(); return;
   }
-  const ni=S.config.schedule[next], rem=schedDate(ni.time)-Date.now();
-  const span=schedDate(ni.time)-schedDate(ci.time), pct=Math.max(0,Math.min(100,100-(rem/span*100)));
-  body.innerHTML=`<div class="cw"><div class="ca">${ci.activity}</div>
+  const ni = todaySched[next], rem = schedDate(ni.time) - Date.now();
+  const span = schedDate(ni.time) - schedDate(ci.time);
+  const pct = Math.max(0, Math.min(100, 100 - (rem / span * 100)));
+  left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
     <div class="cm"><span class="cl">Next: ${ni.time}</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
     <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div></div>`;
+  renderEventPanel();
+}
+
+// ── RENDER — EVENT PANEL (right side of Now card) ──────────────────────────
+let _cachedTodayEvents = null;
+let _eventPanelTick = null;
+
+async function renderEventPanel() {
+  const panel = document.getElementById('countdown-event'); if (!panel) return;
+  const today = new Date().toISOString().slice(0,10);
+
+  if (!S.eventsDirHandle) {
+    panel.innerHTML = `<div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);letter-spacing:.5px;text-align:center;line-height:1.6;opacity:.6">No events<br>folder set</div>`;
+    return;
+  }
+
+  // Load (or use cache) - reload once per render cycle
+  if (!_cachedTodayEvents) {
+    const all = await loadEvents();
+    _cachedTodayEvents = all.filter(e => e.date === today).sort((a,b) => (a.time||'99:99').localeCompare(b.time||'99:99'));
+    // expire cache after 60s
+    setTimeout(() => { _cachedTodayEvents = null; }, 60000);
+  }
+
+  const evs = _cachedTodayEvents;
+  if (!evs.length) {
+    panel.innerHTML = `<div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;opacity:.5">No events<br>today</div>
+      <button onclick="showAddEventSheet(null,()=>{_cachedTodayEvents=null;renderEventPanel();})" style="margin-top:6px;padding:3px 8px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);border-radius:8px;color:var(--accent);font-size:10px;font-family:var(--font-mono);cursor:pointer">＋ add</button>`;
+    return;
+  }
+
+  // Show nearest upcoming event (or latest if all past)
+  const now = new Date();
+  let ev = evs.find(e => {
+    if (!e.time) return false;
+    const [h,m] = e.time.split(':').map(Number);
+    const d = new Date(); d.setHours(h,m,0,0);
+    return d > now;
+  }) || evs[0];
+
+  let countdown = '';
+  let countdownMs = 0;
+  if (ev.time) {
+    const [h,m] = ev.time.split(':').map(Number);
+    const d = new Date(); d.setHours(h,m,0,0);
+    countdownMs = d - now;
+    if (countdownMs > 0) countdown = fmtMs(countdownMs);
+    else countdown = 'Now';
+  }
+
+  const upnext = evs.length > 1 ? evs.find(e => e !== ev) : null;
+  panel.innerHTML = `
+    <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">📅 Event</div>
+    <div style="font-size:11px;font-weight:700;color:var(--text);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${ev.title}</div>
+    ${ev.time ? `<div style="font-size:10px;font-family:var(--font-mono);color:var(--accent);margin-top:2px">${ev.time}</div>` : ''}
+    ${countdown ? `<div id="ev-panel-timer" style="font-size:13px;font-family:var(--font-mono);font-weight:800;color:${countdownMs > 0 ? 'var(--warn)' : 'var(--accent)'};margin-top:4px;letter-spacing:-.5px">${countdown}</div>` : ''}
+    ${upnext ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:9px;font-family:var(--font-mono);color:var(--muted);line-height:1.4;width:100%"><span style="opacity:.6">Up next:</span><br><span style="color:var(--text)">${upnext.title}</span></div>` : ''}
+    <button onclick="showAddEventSheet(null,()=>{_cachedTodayEvents=null;renderEventPanel();})" style="margin-top:8px;padding:2px 8px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:6px;color:var(--accent);font-size:9px;font-family:var(--font-mono);cursor:pointer">＋</button>`;
+
+  // Tick the event countdown
+  if (_eventPanelTick) clearInterval(_eventPanelTick);
+  if (countdownMs > 0) {
+    _eventPanelTick = setInterval(() => {
+      const t = document.getElementById('ev-panel-timer'); if (!t) { clearInterval(_eventPanelTick); return; }
+      const [h2,m2] = ev.time.split(':').map(Number);
+      const d2 = new Date(); d2.setHours(h2,m2,0,0);
+      const rem2 = d2 - new Date();
+      if (rem2 <= 0) { t.textContent = 'Now'; clearInterval(_eventPanelTick); return; }
+      t.textContent = fmtMs(rem2);
+    }, 1000);
+  }
 }
 
 function tickCountdown() {
   const snEl=document.getElementById('snooze-timer');
+  const todaySched = getTodaySchedule();
   if (snEl) { for (const idx in S.snooze) { if(S.snooze[idx]>Date.now()){ snEl.textContent=fmtMs(S.snooze[idx]-Date.now()); return; }} renderCountdown(); return; }
   const tEl=document.getElementById('main-timer'); if (!tEl) return;
   const {next}=getCurNext(); if (next===-1) { renderCountdown(); return; }
-  const rem=schedDate(S.config.schedule[next].time)-Date.now();
+  if (!todaySched[next]) { renderCountdown(); return; }
+  const rem=schedDate(todaySched[next].time)-Date.now();
   if (rem<=0) { renderCountdown(); return; }
   tEl.textContent=fmtMs(rem);
   rem<60000?tEl.classList.add('urgent'):tEl.classList.remove('urgent');
   const prog=document.getElementById('prog-bar');
-  if (prog) { const {cur}=getCurNext(); if(cur!==-1){ const sp=schedDate(S.config.schedule[next].time)-schedDate(S.config.schedule[cur].time); prog.style.width=Math.max(0,Math.min(100,100-(rem/sp*100)))+'%'; }}
+  if (prog) { const {cur}=getCurNext(); if(cur!==-1&&todaySched[cur]){ const sp=schedDate(todaySched[next].time)-schedDate(todaySched[cur].time); prog.style.width=Math.max(0,Math.min(100,100-(rem/sp*100)))+'%'; }}
 }
+
+
 
 // ── POMODORO ENGINE ────────────────────────────────────────────────────────
 const POMO = {
@@ -1164,15 +1355,19 @@ function buildTimeDrum_simple(container, items, initIdx) {
   let startY = 0, isDragging = false;
 
   function getRenderIdx() { return offset + selected; }
-  function getY() { return -(getRenderIdx() * ITEM_H) + (DRUM_H - ITEM_H) / 2; }
+  function getY() { return (DRUM_H - ITEM_H) / 2 - (PAD + offset + selected) * ITEM_H; }
 
   function render(animate) {
     inner.style.transition = animate ? 'transform .18s cubic-bezier(.25,.8,.25,1)' : 'none';
     inner.style.transform = `translateY(${getY()}px)`;
+    // Children: PAD pads + renderItems.length items + PAD pads
+    // The selected item in the rendered list is at renderItems index (offset + selected)
+    // which maps to child index PAD + (offset + selected)
+    const selChildIdx = PAD + offset + selected;
     inner.querySelectorAll('div').forEach((el, i) => {
-      const isSelected = i === PAD + getRenderIdx();
-      el.style.color = isSelected ? 'var(--accent)' : 'var(--muted)';
-      el.style.fontSize = isSelected ? '20px' : '16px';
+      const isSel = i === selChildIdx;
+      el.style.color = isSel ? 'var(--accent)' : 'var(--muted)';
+      el.style.fontSize = isSel ? '20px' : '16px';
     });
   }
 
@@ -1258,10 +1453,11 @@ function renderHabitBars() {
         <button class="habit-edit-icon" data-key="${key}" style="width:56px;padding:3px 0;background:rgba(0,255,136,.13);border:1.5px solid rgba(0,255,136,.35);border-radius:8px;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✎ edit</button>
         <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px">${key}</div>`;
     } else {
+      const isBoolHabit = cfg.type === 'incremental' && mv === 1 && (cfg.increment||1) === 1;
+      const barPct = dv === 0 ? 0 : Math.max(4, (dv / mv) * 100);
       col.innerHTML = `
-        <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="height:${pct}%"></div></div>
-        <div class="habit-icon" data-key="${key}">${cfg.icon}</div>
-        <div class="habit-val${complete ? ' complete' : ''}">${dv}/${mv}</div>`;
+        <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="height:${barPct}%"></div></div>
+        <div class="habit-icon${complete ? ' complete' : ''}" data-key="${key}">${cfg.icon}${complete ? `<span style="position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--bg);font-weight:900;border:1.5px solid var(--bg2)">✓</span>` : ''}</div>`;
 
       const iconEl = col.querySelector('.habit-icon');
       iconEl.addEventListener('click', () => {
@@ -1643,15 +1839,25 @@ function showEditHabitSheet(key) {
 function showManualModal(key) {
   const cfg=S.config?.habitDefinitions?.[key]; if (!cfg) return;
   const raw=S.habitData[key]||0;
-  const dv=cfg.type==='choice'?(raw>0?1:0):raw, mv=cfg.type==='choice'?1:(cfg.maxValue||1);
+  const mv=cfg.type==='choice'?1:(cfg.maxValue||1);
+  const dv=cfg.type==='choice'?(raw>0?1:0):raw;
   const isComplete = dv >= mv;
+  const isBoolHabit = cfg.type==='incremental' && mv===1 && (cfg.increment||1)===1;
   const ov=document.createElement('div'); ov.className='modal-overlay';
   let actions='';
-  const showSimpleIncr = cfg.type==='incremental' && cfg.maxValue===1 && (cfg.increment||1)===1;
-  if (cfg.type==='incremental') {
-    const currentDisplay = showSimpleIncr ? '' : `<div style="font-size:12px;font-family:var(--font-mono);color:var(--muted);text-align:center;margin-bottom:${isComplete?'8px':'16px'}">
-        Current: <strong style="color:var(--text)">${dv} / ${mv}</strong></div>`;
-    actions=`${currentDisplay}
+  if (isBoolHabit) {
+    // Binary habit — show ✓ / ✕ buttons only
+    const done = raw >= 1;
+    actions=`
+      <div class="btn-row" style="justify-content:center;gap:16px">
+        <button class="btn btn-green btn-icon" id="mh-check" style="font-size:22px;width:64px;height:64px;${done?'outline:2px solid var(--accent)':''}">✓</button>
+        <button class="btn btn-red btn-icon" id="mh-cross" style="font-size:22px;width:64px;height:64px;${!done&&raw===0?'':''}">✕</button>
+      </div>
+      ${done?`<div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-top:12px">✓ Done today!</div>`:''}`;
+  } else if (cfg.type==='incremental') {
+    actions=`
+      <div style="font-size:12px;font-family:var(--font-mono);color:var(--muted);text-align:center;margin-bottom:${isComplete?'8px':'16px'}">
+        <strong style="color:var(--text)">${dv}</strong> / ${mv}</div>
       ${isComplete?`<div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-bottom:14px;padding:6px 12px;background:rgba(0,255,136,.08);border-radius:8px">✓ Goal reached!</div>`:''}
       <div class="btn-row">
         <button class="btn btn-green btn-icon" id="mh-inc" ${isComplete?'disabled style="opacity:.45;cursor:not-allowed"':''}>＋</button>
@@ -1672,7 +1878,14 @@ function showManualModal(key) {
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) document.body.removeChild(ov); });
-  if (cfg.type==='incremental') {
+  if (isBoolHabit) {
+    ov.querySelector('#mh-check').addEventListener('click',()=>{
+      S.habitData[key]=1; writeHabitData(); renderHabitBars(); showToast('✓ Done!'); document.body.removeChild(ov);
+    });
+    ov.querySelector('#mh-cross').addEventListener('click',()=>{
+      S.habitData[key]=0; writeHabitData(); renderHabitBars(); showToast('Cleared'); document.body.removeChild(ov);
+    });
+  } else if (cfg.type==='incremental') {
     ov.querySelector('#mh-inc').addEventListener('click',()=>{ 
       const cur2 = S.habitData[key]||0;
       if (cur2 >= cfg.maxValue) { showToast(cfg.messages?.maxReached||'Already at max!'); return; }
@@ -1690,6 +1903,11 @@ function showManualModal(key) {
 
 // ── RENDER — SCHEDULE TAB ─────────────────────────────────────────────────
 let _scheduleSnapshot = null;
+let _schedView = 'list'; // 'list' | 'calendar'
+let _calViewYear = new Date().getFullYear();
+let _calViewMonth = new Date().getMonth();
+let _calSelectedISO = new Date().toISOString().slice(0,10);
+let _calSubTab = 'daily'; // 'daily'|'weekly'|'monthly'|'custom'
 
 function renderScheduleTab(editMode) {
   const el = document.getElementById('schedule-tab');
@@ -1698,14 +1916,13 @@ function renderScheduleTab(editMode) {
 
   if (!sc?.length && !editMode) {
     const hasVault = !!S.vaultDirHandle;
-    el.innerHTML = `<div class="schedule-empty">📭 No schedule loaded<br>
-      <small style="font-size:11px;font-family:var(--font-mono);opacity:.7">
-        ${hasVault
-          ? 'No schedule found in vault — add entries below or check your .md config file.'
-          : 'Tap <b>⚙ Settings → Habit Tracker Folder</b> to connect your vault,<br>or add entries manually below'
-        }
-      </small></div>
-      ${hasVault ? `<div style="display:flex;gap:10px;padding:0 4px"><button class="btn btn-green" id="sched-empty-add" style="flex:1">＋ Add Entry</button><button class="btn btn-ghost" id="sched-empty-settings" style="flex:1">⚙ Settings</button></div>` : `<button class="btn btn-ghost" id="sched-empty-settings" style="width:100%;margin-top:8px">⚙ Open Settings</button>`}`;
+    const btns = hasVault
+      ? '<div style="display:flex;gap:10px;padding:0 4px"><button class="btn btn-green" id="sched-empty-add" style="flex:1">＋ Add Entry</button><button class="btn btn-ghost" id="sched-empty-settings" style="flex:1">⚙ Settings</button></div>'
+      : '<button class="btn btn-ghost" id="sched-empty-settings" style="width:100%;margin-top:8px">⚙ Open Settings</button>';
+    const subtitle = hasVault
+      ? 'No schedule found in vault — add entries below or check your .md config file.'
+      : 'Tap <b>⚙ Settings → Habit Tracker Folder</b> to connect your vault,<br>or add entries manually below';
+    el.innerHTML = '<div class="schedule-empty">📭 No schedule loaded<br><small style="font-size:11px;font-family:var(--font-mono);opacity:.7">' + subtitle + '</small></div>' + btns;
     el.querySelector('#sched-empty-add')?.addEventListener('click', () => {
       if (S._enterSchedEdit) S._enterSchedEdit();
       setTimeout(() => {
@@ -1713,7 +1930,6 @@ function renderScheduleTab(editMode) {
       }, 50);
     });
     el.querySelector('#sched-empty-settings')?.addEventListener('click', () => showSettings());
-    // Long-press on empty state to enter edit mode
     let lp;
     el.addEventListener('pointerdown', () => { lp = setTimeout(() => { if (S._enterSchedEdit) S._enterSchedEdit(); }, 600); });
     el.addEventListener('pointerup', () => clearTimeout(lp));
@@ -1721,55 +1937,94 @@ function renderScheduleTab(editMode) {
     return;
   }
 
-  const { cur } = getCurNext(), now = new Date();
-  let html = '';
+  // ── Build view toggle + content wrapper ──
+  el.innerHTML = '';
 
-  if (!sc?.length) {
-    html += `<div class="schedule-empty" style="padding:40px 0">No entries yet — tap ✎ to add one</div>`;
+  // Toggle (hidden in edit mode)
+  if (!editMode) {
+    const toggle = document.createElement('div');
+    toggle.className = 'sched-view-toggle';
+    toggle.innerHTML = `
+      <button class="sched-view-btn${_schedView==='list'?' active':''}" data-view="list">☰ Today</button>
+      <button class="sched-view-btn${_schedView==='calendar'?' active':''}" data-view="calendar">📅 Calendar</button>`;
+    toggle.querySelectorAll('.sched-view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _schedView = btn.dataset.view;
+        renderScheduleTab(false);
+      });
+    });
+    el.appendChild(toggle);
+  }
+
+  if (!editMode && _schedView === 'calendar') {
+    renderCalendarView(el);
+    return;
+  }
+
+  // ── LIST VIEW (existing logic) ──
+  const { cur } = getCurNext(), now = new Date();
+  const todaySc = getTodaySchedule();
+  const allSc = S.config?.schedule || [];
+  const contentWrap = document.createElement('div');
+  contentWrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+  if (!todaySc.length && !editMode) {
+    contentWrap.innerHTML = `<div class="schedule-empty" style="padding:40px 0">No activities scheduled for today</div>`;
   } else {
-    html += `<div class="sched-tab-list">`;
-    sc.forEach((item, i) => {
-      const t = schedDate(item.time);
-      const isCur = i === cur, isPast = t < now && !isCur;
-      if (editMode) {
-        // Edit mode: clickable rows with delete button
-        html += `<div class="sched-edit-row" data-idx="${i}">
-          <button class="sched-tab-del" data-idx="${i}" title="Delete">✕</button>
+    const listDiv = document.createElement('div');
+    listDiv.className = 'sched-tab-list';
+
+    if (editMode) {
+      allSc.forEach((item, i) => {
+        const repeatLabel = { daily:'Daily', weekly:'Weekly', monthly:'Monthly', yearly:'Yearly', once:'One-time', off:'Off', custom:'Custom Dates' }[item.repeat||'daily'] || 'Daily';
+        const repeatColor = item.repeat === 'off' ? 'var(--danger)' : item.repeat === 'once' ? 'var(--warn)' : 'var(--muted)';
+        const blockBadge = item.blockType === 'routine' ? '🔄' : item.blockType === 'open' ? '🌀' : item.blockType === 'scheduled' ? '📌' : '';
+        const row = document.createElement('div');
+        row.className = 'sched-edit-row';
+        row.dataset.idx = i;
+        row.innerHTML = `<button class="sched-tab-del" data-idx="${i}" title="Delete">✕</button>
           <div class="sched-item-text" data-edit-idx="${i}">
-            <span class="sched-item-time">${item.time}</span>
-            <span class="sched-item-act">${item.activity.replace(/</g,'&lt;')}</span>
-            <span class="sched-item-edit-hint">tap to edit</span>
-          </div>
-        </div>`;
-      } else {
+            <span class="sched-item-time">${item.blockType === 'open' ? `🌀 ~${item.duration||30}min` : item.time}</span>
+            <span class="sched-item-act">${blockBadge ? blockBadge + ' ' : ''}${item.activity.replace(/</g,'&lt;')}</span>
+            <span class="sched-item-edit-hint" style="color:${repeatColor}">${repeatLabel} · tap to edit</span>
+          </div>`;
+        listDiv.appendChild(row);
+      });
+    } else {
+      todaySc.forEach((item, ti) => {
+        const t = schedDate(item.time);
+        const isCur = ti === cur, isPast = t < now && !isCur;
         const hi = detectHabit(item.activity);
         const habitDot = hi ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-left:auto;opacity:.7"></span>` : '';
-        html += `<div class="sched-tab-item ${isCur ? 'current' : ''} ${isPast ? 'past' : ''}" data-sched-idx="${i}">
-          <div class="sched-tab-time-block">
-            <span class="sched-tab-time">${item.time}</span>
+        const origIdx = allSc.indexOf(item);
+        const blockEmoji = item.blockType === 'routine' ? '🔄' : item.blockType === 'open' ? '🌀' : item.blockType === 'scheduled' ? '📌' : '';
+        const timeDisplay = item.blockType === 'open' ? `~${item.duration||30}m` : item.time;
+        const row = document.createElement('div');
+        row.className = `sched-tab-item ${isCur?'current':''} ${isPast?'past':''}`;
+        row.dataset.schedIdx = origIdx;
+        row.innerHTML = `<div class="sched-tab-time-block">
+            <span class="sched-tab-time">${timeDisplay}</span>
             ${isCur ? `<span class="sched-current-label">Now</span>` : ''}
           </div>
           <div class="sched-tab-divider"></div>
-          <span class="sched-tab-act">${item.activity}</span>
-          ${habitDot}
-        </div>`;
-      }
-    });
-    html += `</div>`;
+          <span class="sched-tab-act">${blockEmoji ? blockEmoji + ' ' : ''}${item.activity}</span>
+          ${habitDot}`;
+        listDiv.appendChild(row);
+      });
+    }
+    contentWrap.appendChild(listDiv);
   }
 
-  el.innerHTML = html;
+  el.appendChild(contentWrap);
 
   if (!editMode) {
     setTimeout(() => el.querySelector('.current')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
-    // Long-press any item → enter edit mode
     el.querySelectorAll('.sched-tab-item').forEach((row, i) => {
       let lp;
       row.addEventListener('pointerdown', () => { lp = setTimeout(() => { if (S._enterSchedEdit) S._enterSchedEdit(); }, 500); });
       row.addEventListener('pointerup',   () => clearTimeout(lp));
       row.addEventListener('pointercancel', () => clearTimeout(lp));
       row.addEventListener('pointermove', () => clearTimeout(lp));
-      // Tap → show habit popup if linked
       row.addEventListener('click', () => {
         const item = S.config.schedule[i];
         if (!item) return;
@@ -1781,7 +2036,7 @@ function renderScheduleTab(editMode) {
     return;
   }
 
-  // Wire up delete buttons
+  // Edit mode wiring
   el.querySelectorAll('.sched-tab-del').forEach(b => {
     b.addEventListener('click', () => {
       const idx = parseInt(b.dataset.idx);
@@ -1793,14 +2048,13 @@ function renderScheduleTab(editMode) {
     });
   });
 
-  // Wire up click-to-edit on each item text
   el.querySelectorAll('.sched-item-text').forEach(row => {
     row.addEventListener('click', () => {
       const idx = parseInt(row.dataset.editIdx);
       const item = S.config.schedule[idx];
       if (!item) return;
-      showEditSchedulePopup(item.time, item.activity, (newTime, newAct) => {
-        S.config.schedule[idx] = { time: newTime, activity: newAct };
+      showEditSchedulePopup(item.time, item.activity, item.repeat, (newTime, newAct, newRepeat) => {
+        S.config.schedule[idx] = { time: newTime, activity: newAct, repeat: newRepeat || 'daily', createdOn: item.createdOn || new Date().toISOString().slice(0,10) };
         try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
         LS.set('lastConfig', S.config);
         saveScheduleToVault();
@@ -1809,6 +2063,347 @@ function renderScheduleTab(editMode) {
       });
     });
   });
+}
+
+// ── CALENDAR HEAT MAP + SUB-TABS VIEW ────────────────────────────────────────
+function getScheduleForDate(isoDate) {
+  // Returns items for a date (YYYY-MM-DD).
+  // Daily + unlimited items are excluded from the calendar heat map —
+  // they are background routines, not discrete blocks worth highlighting.
+  const all = S.config?.schedule || [];
+  const d = new Date(isoDate + 'T00:00:00');
+  const dow = d.getDay();
+  const dom = d.getDate();
+
+  return all.filter(item => {
+    if (item.limitFrom && isoDate < item.limitFrom) return false;
+    if (item.limitTo && isoDate > item.limitTo) return false;
+    const r = item.repeat || 'daily';
+    // Daily with no date limits = unlimited routine → skip in calendar
+    if (r === 'daily' && !item.limitFrom && !item.limitTo) return false;
+    if (r === 'daily') return true; // daily but bounded by date range → show
+    if (r === 'off') return false;
+    if (r === 'weekly') {
+      if (!item.createdOn) return true;
+      return new Date(item.createdOn + 'T00:00:00').getDay() === dow;
+    }
+    if (r === 'monthly') {
+      if (!item.createdOn) return true;
+      return new Date(item.createdOn + 'T00:00:00').getDate() === dom;
+    }
+    if (r === 'yearly') {
+      if (!item.createdOn) return true;
+      const cd = new Date(item.createdOn + 'T00:00:00');
+      return cd.getMonth() === d.getMonth() && cd.getDate() === dom;
+    }
+    if (r === 'once') return item.createdOn === isoDate;
+    if (r === 'custom') return (item.customDates || []).includes(isoDate);
+    return true;
+  });
+}
+
+function getHeatLevel(taskCount) {
+  // 0 tasks = 0, 1-2 = 1, 3-4 = 2, 5-6 = 3, 7-8 = 4, 9-10 = 5, 11+ = 6
+  if (taskCount === 0) return 0;
+  return Math.min(6, Math.ceil(taskCount / 2));
+}
+
+function renderCalendarView(container) {
+  const now = new Date();
+  const todayISO = now.toISOString().slice(0,10);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cal-view-wrap';
+
+  // ── TOP: Calendar Grid ──
+  const gridWrap = document.createElement('div');
+  gridWrap.className = 'cal-grid-wrap';
+  wrap.appendChild(gridWrap);
+
+  function buildGrid() {
+    gridWrap.innerHTML = '';
+
+    // Nav row
+    const nav = document.createElement('div');
+    nav.className = 'cal-grid-nav';
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'cal-nav-btn';
+    prevBtn.innerHTML = '‹';
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'cal-nav-btn';
+    nextBtn.innerHTML = '›';
+    const mLabel = document.createElement('div');
+    mLabel.className = 'cal-month-label';
+    const mNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    mLabel.textContent = `${mNames[_calViewMonth]} ${_calViewYear}`;
+
+    // Heat legend (compact, inline)
+    const legend = document.createElement('div');
+    legend.className = 'cal-heat-legend';
+    legend.innerHTML = `<span>Free</span>
+      <div class="cal-heat-swatch cal-heat-1"></div>
+      <div class="cal-heat-swatch cal-heat-2"></div>
+      <div class="cal-heat-swatch cal-heat-3"></div>
+      <div class="cal-heat-swatch cal-heat-4"></div>
+      <div class="cal-heat-swatch cal-heat-5"></div>
+      <div class="cal-heat-swatch cal-heat-6"></div>
+      <span>Packed</span>`;
+
+    nav.appendChild(prevBtn);
+    nav.appendChild(mLabel);
+    nav.appendChild(nextBtn);
+    gridWrap.appendChild(nav);
+
+    prevBtn.addEventListener('click', () => {
+      _calViewMonth--;
+      if (_calViewMonth < 0) { _calViewMonth = 11; _calViewYear--; }
+      buildGrid();
+    });
+    nextBtn.addEventListener('click', () => {
+      _calViewMonth++;
+      if (_calViewMonth > 11) { _calViewMonth = 0; _calViewYear++; }
+      buildGrid();
+    });
+
+    // Day headers
+    const dayHdrs = document.createElement('div');
+    dayHdrs.className = 'cal-day-headers';
+    ['SUN','MON','TUE','WED','THU','FRI','SAT'].forEach(d => {
+      const h = document.createElement('div');
+      h.className = 'cal-day-hdr';
+      h.textContent = d;
+      dayHdrs.appendChild(h);
+    });
+    gridWrap.appendChild(dayHdrs);
+
+    // Days grid
+    const daysGrid = document.createElement('div');
+    daysGrid.className = 'cal-days';
+
+    const firstDay = new Date(_calViewYear, _calViewMonth, 1).getDay();
+    const daysInMonth = new Date(_calViewYear, _calViewMonth + 1, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'cal-day empty';
+      daysGrid.appendChild(empty);
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${_calViewYear}-${String(_calViewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const tasks = getScheduleForDate(iso);
+      const heat = getHeatLevel(tasks.length);
+      const isToday = iso === todayISO;
+      const isSel = iso === _calSelectedISO;
+
+      const cell = document.createElement('div');
+      cell.className = `cal-day cal-heat-${heat}${isToday?' today-ring':''}${isSel?' selected-day':''}`;
+
+      const numEl = document.createElement('div');
+      numEl.className = 'cal-day-num';
+      numEl.textContent = d;
+      cell.appendChild(numEl);
+
+      if (tasks.length > 0) {
+        const dot = document.createElement('div');
+        dot.className = 'cal-day-dot';
+        cell.appendChild(dot);
+      }
+
+      cell.title = `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`;
+      cell.addEventListener('click', () => {
+        _calSelectedISO = iso;
+        buildGrid();
+        buildSubContent();
+      });
+      daysGrid.appendChild(cell);
+    }
+    gridWrap.appendChild(daysGrid);
+    gridWrap.appendChild(legend);
+  }
+
+  // ── BOTTOM: Day blocks panel ──
+  const bottom = document.createElement('div');
+  bottom.className = 'cal-bottom';
+
+  // Selected day header bar (date label + ＋ Add Block button)
+  const selBar = document.createElement('div');
+  selBar.className = 'cal-selected-bar';
+  selBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;flex-shrink:0;border-bottom:1px solid var(--border);background:rgba(0,255,136,.03)';
+  bottom.appendChild(selBar);
+
+  // Sub tab bar — Blocks (once/custom) | Recurring (weekly/monthly/yearly)
+  const subTabBar = document.createElement('div');
+  subTabBar.className = 'cal-sub-tabs';
+  // Ensure _calSubTab is never 'daily' (old value) — reset to 'blocks'
+  if (_calSubTab === 'daily') _calSubTab = 'blocks';
+  const subTabs = [
+    { id: 'blocks',    label: '📌 Blocks' },
+    { id: 'recurring', label: '🔁 Recurring' },
+  ];
+  subTabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = `cal-sub-tab${_calSubTab === t.id ? ' active' : ''}`;
+    btn.textContent = t.label;
+    btn.addEventListener('click', () => {
+      _calSubTab = t.id;
+      subTabBar.querySelectorAll('.cal-sub-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      buildSubContent();
+    });
+    subTabBar.appendChild(btn);
+  });
+  bottom.appendChild(subTabBar);
+
+  const subContent = document.createElement('div');
+  subContent.className = 'cal-sub-content';
+  bottom.appendChild(subContent);
+
+  function openAddBlockForDate(isoDate) {
+    // Open add-schedule sheet pre-seeded for a specific date as a one-time block
+    showAddScheduleSheetForDate(isoDate, () => {
+      buildGrid();       // refresh heat map
+      buildSubContent(); // refresh day panel
+    });
+  }
+
+  function buildSubContent() {
+    const d = new Date(_calSelectedISO + 'T00:00:00');
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const isSelToday = _calSelectedISO === todayISO;
+
+    // ── Header bar: date label + add button ──
+    selBar.innerHTML = '';
+    const dateLbl = document.createElement('div');
+    dateLbl.style.cssText = 'display:flex;align-items:center;gap:8px';
+    dateLbl.innerHTML = `<span style="font-weight:800;font-size:13px;font-family:var(--font-mono)">${dayNames[d.getDay()]}, ${mNames[d.getMonth()]} ${d.getDate()}</span>
+      ${isSelToday ? '<span style="background:rgba(0,255,136,.15);border:1px solid rgba(0,255,136,.3);border-radius:10px;padding:1px 8px;font-size:10px;color:var(--accent)">Today</span>' : ''}`;
+    const addBtn = document.createElement('button');
+    addBtn.innerHTML = '＋ Add Time Block';
+    addBtn.style.cssText = 'padding:5px 12px;border-radius:8px;border:1px solid rgba(0,255,136,.35);background:rgba(0,255,136,.08);color:var(--accent);font-size:11px;font-family:var(--font-mono);font-weight:700;cursor:pointer;transition:all .12s;flex-shrink:0';
+    addBtn.addEventListener('click', () => openAddBlockForDate(_calSelectedISO));
+    selBar.appendChild(dateLbl);
+    selBar.appendChild(addBtn);
+
+    subContent.innerHTML = '';
+    const allSc = S.config?.schedule || [];
+    const nowTime = new Date();
+
+    if (_calSubTab === 'blocks') {
+      // Blocks: one-time (once) + bounded-daily + custom-date entries active on this day
+      const blocks = allSc.filter(item => {
+        const r = item.repeat || 'daily';
+        if (item.limitFrom && _calSelectedISO < item.limitFrom) return false;
+        if (item.limitTo && _calSelectedISO > item.limitTo) return false;
+        if (r === 'once') return item.createdOn === _calSelectedISO;
+        if (r === 'custom') return (item.customDates || []).includes(_calSelectedISO);
+        // Daily but bounded by dates = a block sprint
+        if (r === 'daily' && (item.limitFrom || item.limitTo)) return true;
+        return false;
+      });
+
+      if (blocks.length === 0) {
+        // Empty state with a prominent add CTA
+        const empty = document.createElement('div');
+        empty.className = 'cal-sub-empty';
+        empty.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 16px';
+        empty.innerHTML = `<div style="font-size:28px;opacity:.4">📭</div>
+          <div style="color:var(--muted);font-size:12px;font-family:var(--font-mono);text-align:center;line-height:1.7">No blocks scheduled for this day.<br>Tap to add a one-time task block.</div>`;
+        const ctaBtn = document.createElement('button');
+        ctaBtn.textContent = '＋ Schedule a Time Block';
+        ctaBtn.style.cssText = 'padding:10px 20px;border-radius:10px;border:1.5px solid rgba(0,255,136,.4);background:rgba(0,255,136,.08);color:var(--accent);font-size:13px;font-family:var(--font-mono);font-weight:700;cursor:pointer';
+        ctaBtn.addEventListener('click', () => openAddBlockForDate(_calSelectedISO));
+        empty.appendChild(ctaBtn);
+        subContent.appendChild(empty);
+        return;
+      }
+
+      blocks.sort((a,b) => schedDate(a.time) - schedDate(b.time));
+      blocks.forEach(item => {
+        const r = item.repeat || 'daily';
+        const repeatLabel = { once:'One-time', custom:'Custom', daily:'Bounded daily' }[r] || r;
+        let nowClass = '';
+        if (isSelToday) {
+          const itemTime = schedDate(item.time);
+          const diffMs = nowTime - itemTime;
+          const todayItems = getScheduleForDate(todayISO).sort((a,b) => schedDate(a.time) - schedDate(b.time));
+          const curIdx = (() => { let c=-1; todayItems.forEach((it,ii) => { if (schedDate(it.time) <= nowTime) c=ii; }); return c; })();
+          if (todayItems.indexOf(item) === curIdx) nowClass = 'now-item';
+          else if (diffMs > 5000) nowClass = 'past-item';
+        }
+        const itemEl = document.createElement('div');
+        itemEl.className = `cal-sub-item ${nowClass}`;
+        itemEl.innerHTML = `
+          <span class="cal-sub-time">${item.time}</span>
+          <span class="cal-sub-act">${item.activity.replace(/</g,'&lt;')}</span>
+          <span class="cal-sub-repeat">${repeatLabel}</span>`;
+        itemEl.addEventListener('click', () => {
+          const hi = detectHabit(item.activity);
+          if (hi) showManualModal(hi.key);
+        });
+        subContent.appendChild(itemEl);
+      });
+
+    } else {
+      // Recurring: weekly / monthly / yearly tasks applicable to this day
+      const recurring = allSc.filter(item => {
+        const r = item.repeat || 'daily';
+        if (item.limitFrom && _calSelectedISO < item.limitFrom) return false;
+        if (item.limitTo && _calSelectedISO > item.limitTo) return false;
+        if (r === 'weekly') {
+          if (!item.createdOn) return true;
+          return new Date(item.createdOn + 'T00:00:00').getDay() === d.getDay();
+        }
+        if (r === 'monthly') {
+          if (!item.createdOn) return true;
+          return new Date(item.createdOn + 'T00:00:00').getDate() === d.getDate();
+        }
+        if (r === 'yearly') {
+          if (!item.createdOn) return true;
+          const cd = new Date(item.createdOn + 'T00:00:00');
+          return cd.getMonth() === d.getMonth() && cd.getDate() === d.getDate();
+        }
+        return false;
+      });
+
+      if (recurring.length === 0) {
+        subContent.innerHTML = `<div class="cal-sub-empty" style="padding:28px 16px;text-align:center;color:var(--muted);font-size:12px;font-family:var(--font-mono);line-height:1.7">No weekly / monthly / yearly<br>tasks fall on this day.</div>`;
+        return;
+      }
+
+      recurring.sort((a,b) => schedDate(a.time) - schedDate(b.time));
+      recurring.forEach(item => {
+        const r = item.repeat;
+        const repeatLabel = { weekly:'Weekly', monthly:'Monthly', yearly:'Yearly' }[r] || r;
+        let nowClass = '';
+        if (isSelToday) {
+          const itemTime = schedDate(item.time);
+          const diffMs = nowTime - itemTime;
+          const todayItems = getScheduleForDate(todayISO).sort((a,b) => schedDate(a.time) - schedDate(b.time));
+          const curIdx = (() => { let c=-1; todayItems.forEach((it,ii) => { if (schedDate(it.time) <= nowTime) c=ii; }); return c; })();
+          if (todayItems.indexOf(item) === curIdx) nowClass = 'now-item';
+          else if (diffMs > 5000) nowClass = 'past-item';
+        }
+        const itemEl = document.createElement('div');
+        itemEl.className = `cal-sub-item ${nowClass}`;
+        itemEl.innerHTML = `
+          <span class="cal-sub-time">${item.time}</span>
+          <span class="cal-sub-act">${item.activity.replace(/</g,'&lt;')}</span>
+          <span class="cal-sub-repeat">${repeatLabel}</span>`;
+        itemEl.addEventListener('click', () => {
+          const hi = detectHabit(item.activity);
+          if (hi) showManualModal(hi.key);
+        });
+        subContent.appendChild(itemEl);
+      });
+    }
+  }
+
+  buildGrid();
+  buildSubContent();
+  wrap.appendChild(bottom);
+  container.appendChild(wrap);
 }
 
 // ── TIME DRUM PICKER HELPER ───────────────────────────────────────────────
@@ -1932,8 +2527,16 @@ function buildTimeDrum(containerId, initialTime) {
   };
 }
 
-// ── SHARED SCHEDULE POPUP (Add & Edit) ────────────────────────────────────
-function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSave) {
+// ── SHARED SCHEDULE POPUP (Edit only — Add has its own flow) ────────────────
+function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSave, initialRepeat) {
+  const repeatOpts = [
+    { val: 'daily',   label: '🔁 Daily' },
+    { val: 'weekly',  label: '📅 Weekly' },
+    { val: 'monthly', label: '🗓 Monthly' },
+    { val: 'yearly',  label: '📆 Yearly' },
+    { val: 'off',     label: '⏸ One-time' },
+  ];
+  const curRepeat = (initialRepeat === 'once') ? 'off' : (initialRepeat || 'daily');
   const ov = document.createElement('div');
   ov.className = 'sched-edit-popup';
   ov.innerHTML = `<div class="sched-edit-sheet">
@@ -1941,8 +2544,12 @@ function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSav
     <div style="font-size:16px;font-weight:800;margin-bottom:12px">${title}</div>
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Time</div>
     <div id="time-drum-root"></div>
-    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:4px">Activity</div>
-    <input type="text" id="sp-act" value="${(initialActivity||'').replace(/"/g,'&quot;')}" placeholder="Activity description" autocomplete="off" style="margin-bottom:16px"/>
+    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:16px">Activity</div>
+    <input type="text" id="sp-act" placeholder="Activity description" autocomplete="off" style="margin-bottom:12px"/>
+    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Repeat</div>
+    <select id="sp-repeat-sel" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:16px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'12\\' height=\\'12\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'%23555570\\' stroke-width=\\'2\\'%3E%3Cpolyline points=\\'6 9 12 15 18 9\\'%3E%3C/polyline%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 14px center;box-sizing:border-box">
+      ${repeatOpts.map(o => `<option value="${o.val}"${curRepeat===o.val?' selected':''}>${o.label}</option>`).join('')}
+    </select>
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" id="sp-cancel" style="flex:1">Cancel</button>
       <button class="btn btn-green" id="sp-save" style="flex:2">${saveLabel}</button>
@@ -1952,7 +2559,13 @@ function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSav
 
   const drum = buildTimeDrum('time-drum-root', initialTime);
   const actIn = ov.querySelector('#sp-act');
+  // Set value after DOM is ready (not via html attribute to avoid encoding issues)
+  actIn.value = initialActivity || '';
   setTimeout(() => actIn.focus(), 150);
+
+  let selectedRepeat = curRepeat;
+  const repSel = ov.querySelector('#sp-repeat-sel');
+  repSel.addEventListener('change', () => { selectedRepeat = repSel.value; });
 
   const close = () => document.body.removeChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
@@ -1962,28 +2575,841 @@ function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSav
     const a = actIn.value.trim();
     if (!a) { showToast('Enter an activity'); return; }
     close();
-    onSave(t, a);
+    onSave(t, a, selectedRepeat);
   });
   actIn.addEventListener('keydown', e => { if (e.key === 'Enter') ov.querySelector('#sp-save').click(); });
 }
 
-// ── ADD SCHEDULE ENTRY SHEET ───────────────────────────────────────────────
-function showAddScheduleSheet(onDone) {
-  showSchedulePopup('Add Schedule Entry', '6:00 AM', '', '+ Add', (t, a) => {
+// ── MINI CALENDAR UI HELPER ───────────────────────────────────────────────────
+// Returns an object { el, getSelected, setRange }
+function buildMiniCalendar(opts = {}) {
+  const { rangeFrom = null, rangeTo = null, selected = [] } = opts;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px;user-select:none';
+
+  let viewYear, viewMonth;
+  const selSet = new Set(selected);
+
+  const todayISO = new Date().toISOString().slice(0,10);
+  const now = new Date();
+  viewYear = now.getFullYear();
+  viewMonth = now.getMonth();
+
+  function isoDate(y, m, d) {
+    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  function isInRange(iso) {
+    if (rangeFrom && iso < rangeFrom) return false;
+    if (rangeTo && iso > rangeTo) return false;
+    return true;
+  }
+
+  function render() {
+    wrap.innerHTML = '';
+
+    // Header: prev / month+year / next
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px';
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '‹';
+    prevBtn.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);width:32px;height:32px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0';
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = '›';
+    nextBtn.style.cssText = prevBtn.style.cssText;
+    const monthLabel = document.createElement('div');
+    monthLabel.style.cssText = 'font-size:14px;font-weight:700;font-family:var(--font-mono)';
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    monthLabel.textContent = `${monthNames[viewMonth]} ${viewYear}`;
+    hdr.appendChild(prevBtn);
+    hdr.appendChild(monthLabel);
+    hdr.appendChild(nextBtn);
+    wrap.appendChild(hdr);
+
+    prevBtn.addEventListener('click', () => {
+      viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+      render();
+    });
+    nextBtn.addEventListener('click', () => {
+      viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      render();
+    });
+
+    // Day headers
+    const dayHdr = document.createElement('div');
+    dayHdr.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px';
+    ['S','M','T','W','T','F','S'].forEach(d => {
+      const cell = document.createElement('div');
+      cell.textContent = d;
+      cell.style.cssText = 'text-align:center;font-size:10px;font-family:var(--font-mono);color:var(--muted);padding:2px 0';
+      dayHdr.appendChild(cell);
+    });
+    wrap.appendChild(dayHdr);
+
+    // Days grid
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:3px';
+
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+    // Empty slots
+    for (let i = 0; i < firstDay; i++) {
+      const empty = document.createElement('div');
+      grid.appendChild(empty);
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = isoDate(viewYear, viewMonth, d);
+      const inRange = isInRange(iso);
+      const isSel = selSet.has(iso);
+      const isToday = iso === todayISO;
+
+      const cell = document.createElement('div');
+      cell.style.cssText = `
+        text-align:center;padding:6px 2px;border-radius:8px;font-size:13px;font-family:var(--font-mono);font-weight:600;
+        cursor:${inRange ? 'pointer' : 'default'};
+        opacity:${inRange ? 1 : 0.25};
+        background:${isSel ? 'rgba(0,120,255,0.35)' : (isToday ? 'rgba(0,255,136,0.08)' : 'transparent')};
+        color:${isSel ? '#60aaff' : (isToday ? 'var(--accent)' : 'var(--text)')};
+        border:${isSel ? '1.5px solid rgba(0,120,255,0.6)' : (isToday ? '1px solid rgba(0,255,136,0.3)' : '1px solid transparent')};
+        transition:all .12s;
+      `;
+      cell.textContent = d;
+
+      if (inRange) {
+        cell.addEventListener('click', () => {
+          if (selSet.has(iso)) selSet.delete(iso);
+          else selSet.add(iso);
+          render();
+        });
+      }
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+
+    // Selected count
+    const cnt = document.createElement('div');
+    cnt.style.cssText = 'margin-top:10px;font-size:11px;font-family:var(--font-mono);color:var(--muted);text-align:center';
+    cnt.textContent = selSet.size > 0 ? `${selSet.size} date${selSet.size>1?'s':''} selected` : 'Tap dates to select';
+    wrap.appendChild(cnt);
+  }
+
+  render();
+
+  return {
+    el: wrap,
+    getSelected: () => Array.from(selSet).sort(),
+  };
+}
+
+// ── MINI DATE PICKER (single date, inline) ─────────────────────────────────
+function buildSingleDatePicker(initialISO) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px;user-select:none;';
+
+  let viewYear, viewMonth, selected;
+  const todayISO = new Date().toISOString().slice(0,10);
+  const init = initialISO || todayISO;
+  selected = init;
+  viewYear = parseInt(init.slice(0,4));
+  viewMonth = parseInt(init.slice(5,7)) - 1;
+
+  function isoDate(y, m, d) {
+    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  function render() {
+    wrap.innerHTML = '';
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
+    const prevBtn = document.createElement('button');
+    prevBtn.innerHTML = '‹';
+    prevBtn.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);width:28px;height:28px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0';
+    const nextBtn = document.createElement('button');
+    nextBtn.innerHTML = '›';
+    nextBtn.style.cssText = prevBtn.style.cssText;
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:13px;font-weight:700;font-family:var(--font-mono)';
+    lbl.textContent = `${monthNames[viewMonth]} ${viewYear}`;
+    hdr.appendChild(prevBtn);
+    hdr.appendChild(lbl);
+    hdr.appendChild(nextBtn);
+    wrap.appendChild(hdr);
+
+    prevBtn.addEventListener('click', () => { viewMonth--; if (viewMonth<0){viewMonth=11;viewYear--;} render(); });
+    nextBtn.addEventListener('click', () => { viewMonth++; if (viewMonth>11){viewMonth=0;viewYear++;} render(); });
+
+    const dayHdr = document.createElement('div');
+    dayHdr.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px';
+    ['S','M','T','W','T','F','S'].forEach(d => {
+      const c = document.createElement('div');
+      c.textContent = d;
+      c.style.cssText = 'text-align:center;font-size:9px;font-family:var(--font-mono);color:var(--muted)';
+      dayHdr.appendChild(c);
+    });
+    wrap.appendChild(dayHdr);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:2px';
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+    for (let i=0;i<firstDay;i++) grid.appendChild(document.createElement('div'));
+    for (let d=1;d<=daysInMonth;d++) {
+      const iso = isoDate(viewYear, viewMonth, d);
+      const isSel = iso === selected;
+      const cell = document.createElement('div');
+      cell.textContent = d;
+      cell.style.cssText = `text-align:center;padding:5px 1px;border-radius:6px;font-size:12px;font-family:var(--font-mono);font-weight:600;cursor:pointer;background:${isSel?'var(--accent)':'transparent'};color:${isSel?'var(--bg)':'var(--text)'};transition:all .1s`;
+      cell.addEventListener('click', () => { selected = iso; render(); });
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+  }
+
+  render();
+  return { el: wrap, getSelected: () => selected };
+}
+
+// ── ADD BLOCK FOR A SPECIFIC CALENDAR DATE ────────────────────────────────────
+// Simplified sheet: pre-seeds the given date as a one-time block.
+// User picks time + activity only. Repeat can be changed if desired.
+function showAddScheduleSheetForDate(isoDate, onDone) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease';
+
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));width:100%;max-width:480px;max-height:88dvh;overflow-y:auto;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1)';
+  ov.appendChild(sheet);
+
+  // Format display date
+  const d = new Date(isoDate + 'T00:00:00');
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const mNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const todayISO = new Date().toISOString().slice(0,10);
+  const isToday = isoDate === todayISO;
+  const dateLabel = isToday ? 'Today' : `${dayNames[d.getDay()]}, ${mNames[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+
+  // Repeat options (once pre-selected)
+  let selectedRepeat = 'once';
+
+  sheet.innerHTML = `
+    <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div style="flex:1">
+        <div style="font-size:18px;font-weight:800;letter-spacing:-.3px">Add Time Block</div>
+        <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-top:2px">📅 ${dateLabel}</div>
+      </div>
+    </div>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Activity</div>
+    <input id="asfd-act" type="text" placeholder="What's this block?" autocomplete="off"
+      style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-size:14px;font-family:var(--font-display);outline:none;margin-bottom:16px;transition:border-color .15s;box-sizing:border-box"/>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Time</div>
+    <div id="asfd-drum-root" style="margin-bottom:16px"></div>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Repeat</div>
+    <select id="asfd-repeat-sel" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:20px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23555570\' stroke-width=\'2\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 14px center;box-sizing:border-box">
+      <option value="once" selected>1️⃣ One-time</option>
+      <option value="weekly">📅 Weekly</option>
+      <option value="monthly">🗓 Monthly</option>
+      <option value="daily">🔁 Daily</option>
+      <option value="custom">📆 Custom Dates</option>
+    </select>
+    <div style="display:flex;gap:10px">
+      <button id="asfd-cancel" class="btn btn-ghost" style="flex:1">Cancel</button>
+      <button id="asfd-add" class="btn btn-green" style="flex:2">＋ Add Time Block</button>
+    </div>`;
+
+  document.body.appendChild(ov);
+
+  // Wire activity input styling
+  const actIn = sheet.querySelector('#asfd-act');
+  actIn.addEventListener('focus', () => actIn.style.borderColor = 'var(--accent)');
+  actIn.addEventListener('blur',  () => actIn.style.borderColor = 'var(--border)');
+  setTimeout(() => actIn.focus(), 200);
+
+  // Build time drum
+  const drumInst = buildTimeDrumEl(sheet.querySelector('#asfd-drum-root'), '9:00 AM');
+
+  // Wire repeat dropdown
+  sheet.querySelector('#asfd-repeat-sel').addEventListener('change', e => { selectedRepeat = e.target.value; });
+
+  const close = () => document.body.removeChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  sheet.querySelector('#asfd-cancel').addEventListener('click', close);
+
+  sheet.querySelector('#asfd-add').addEventListener('click', () => {
+    const activity = actIn.value.trim();
+    if (!activity) { showToast('Enter an activity'); actIn.focus(); return; }
+
     if (!S.config) S.config = { schedule: [], habitDefinitions: {}, habitTracker: { enabled: true, snoozeOptions: [5, 10] } };
-    S.config.schedule.push({ time: t, activity: a });
-    try { S.config.schedule.sort((x, y) => schedDate(x.time) - schedDate(y.time)); } catch {}
+    if (!S.config.schedule) S.config.schedule = [];
+
+    const time = drumInst ? drumInst.getTime() : '9:00 AM';
+    const newItem = {
+      activity,
+      time,
+      repeat: selectedRepeat,
+      createdOn: isoDate,
+    };
+    // For 'once', createdOn is the target date (already set above)
+    // For custom, fall back to the add-schedule sheet for multi-date selection
+    if (selectedRepeat === 'custom') {
+      close();
+      showAddScheduleSheet(() => { if (onDone) onDone(); });
+      return;
+    }
+    S.config.schedule.push(newItem);
+    try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
     LS.set('lastConfig', S.config);
     saveScheduleToVault();
     forceSwUpdate();
-    onDone();
-    showToast('✓ Entry added');
+    close();
+    showToast('✓ Time Block added');
+    if (onDone) onDone();
   });
+
+  actIn.addEventListener('keydown', e => { if (e.key === 'Enter') sheet.querySelector('#asfd-add').click(); });
+}
+
+// ── ADD SCHEDULE ENTRY — NEW COMPREHENSIVE FLOW ───────────────────────────────
+function showAddScheduleSheet(onDone) {
+  const today = new Date().toISOString().slice(0,10);
+  const ov = document.createElement('div');
+  ov.className = 'sched-edit-popup';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease';
+
+  // State
+  let blockType = 'routine'; // 'routine' | 'scheduled' | 'open'
+  let schedType = 'unlimited'; // 'unlimited' | 'limited'
+  let repeatMode = 'daily'; // 'off','daily','weekly','monthly','custom'
+  let limitFromISO = today;
+  let limitToISO = '';
+  let customDates = [];
+  let perDateMode = 'same'; // 'same' | 'different'
+  let savedActivity = ''; // preserve activity across rebuilds
+
+  // Calendar pickers (built lazily)
+  let fromPicker = null, toPicker = null, customCal = null;
+  let sharedDrumInst = null;
+  let perDateTimes = {}; // date -> time string
+
+  function build() {
+    const currentActVal = savedActivity;
+    ov.innerHTML = '';
+    const sheet = document.createElement('div');
+    sheet.className = 'sched-edit-sheet';
+    sheet.style.cssText = 'background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:480px;max-height:92dvh;overflow-y:auto;';
+    ov.appendChild(sheet);
+
+    // ── Header ──
+    sheet.innerHTML = `<div class="modal-handle"></div>
+      <div style="font-size:18px;font-weight:800;margin-bottom:18px">Add Time Block</div>`;
+
+    // ── Block Type ──
+    const blockTypeLabel = document.createElement('div');
+    blockTypeLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px';
+    blockTypeLabel.textContent = 'Block Type';
+    sheet.appendChild(blockTypeLabel);
+
+    const blockTypeDefs = [
+      { val: 'routine',   emoji: '🔄', label: 'Routine',   desc: 'Daily habits & chores. Cannot carry over.' },
+      { val: 'scheduled', emoji: '📌', label: 'Scheduled',  desc: 'Fixed-time events & appointments.' },
+      { val: 'open',      emoji: '🌀', label: 'Open',        desc: 'Hobbies & projects. Specify duration, not time.' },
+    ];
+    const blockTypeRow = document.createElement('div');
+    blockTypeRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px';
+    blockTypeDefs.forEach(bt => {
+      const btn = document.createElement('button');
+      const active = blockType === bt.val;
+      btn.style.cssText = `padding:10px 6px;border-radius:12px;border:1.5px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(0,255,136,.1)':'var(--bg3)'};color:${active?'var(--accent)':'var(--muted)'};font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-display);transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:3px;`;
+      btn.innerHTML = `<span style="font-size:20px">${bt.emoji}</span><span>${bt.label}</span>`;
+      btn.title = bt.desc;
+      btn.addEventListener('click', () => { blockType = bt.val; savedActivity = sheet.querySelector('#add-act-input')?.value || currentActVal; build(); });
+      blockTypeRow.appendChild(btn);
+    });
+    sheet.appendChild(blockTypeRow);
+
+    // Block type description
+    const btDesc = blockTypeDefs.find(b=>b.val===blockType);
+    const descEl = document.createElement('div');
+    descEl.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);border-radius:8px;padding:8px 12px;margin-bottom:16px;line-height:1.5';
+    descEl.textContent = btDesc?.desc || '';
+    sheet.appendChild(descEl);
+
+    // ── Activity ──
+    const actLabel = document.createElement('div');
+    actLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px';
+    actLabel.textContent = 'Activity';
+    sheet.appendChild(actLabel);
+
+    const actInput = document.createElement('input');
+    actInput.id = 'add-act-input';
+    actInput.type = 'text';
+    actInput.placeholder = blockType === 'open' ? 'What hobby or project?' : blockType === 'routine' ? 'e.g. Drink water, Morning stretch…' : 'e.g. Doctor appointment…';
+    actInput.autocomplete = 'off';
+    actInput.value = currentActVal;
+    actInput.style.cssText = 'width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 14px;color:var(--text);font-family:var(--font-display);font-size:14px;outline:none;margin-bottom:16px;transition:border-color .15s;box-sizing:border-box';
+    actInput.addEventListener('focus', () => actInput.style.borderColor = 'var(--accent)');
+    actInput.addEventListener('blur', () => actInput.style.borderColor = 'var(--border)');
+    actInput.addEventListener('input', () => { savedActivity = actInput.value; });
+    sheet.appendChild(actInput);
+    // Focus only on first build
+    if (!currentActVal) setTimeout(() => actInput.focus(), 150);
+
+    // ── Duration (Open blocks only) ──
+    if (blockType === 'open') {
+      const durLabel = document.createElement('div');
+      durLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px';
+      durLabel.textContent = 'Estimated Duration';
+      sheet.appendChild(durLabel);
+      const durRow = document.createElement('div');
+      durRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center';
+      const durInput = document.createElement('input');
+      durInput.id = 'add-dur-input';
+      durInput.type = 'number';
+      durInput.min = '5'; durInput.max = '480'; durInput.step = '5';
+      durInput.placeholder = '30';
+      durInput.value = '30';
+      durInput.style.cssText = 'flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:16px;outline:none;transition:border-color .15s;box-sizing:border-box';
+      const durUnit = document.createElement('div');
+      durUnit.style.cssText = 'font-size:13px;color:var(--muted);font-family:var(--font-mono);flex-shrink:0';
+      durUnit.textContent = 'minutes';
+      durRow.appendChild(durInput);
+      durRow.appendChild(durUnit);
+      sheet.appendChild(durRow);
+      // Carryover note
+      const carryNote = document.createElement('div');
+      carryNote.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:rgba(0,255,136,.6);background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:8px;padding:8px 12px;margin-bottom:16px';
+      carryNote.textContent = '🌀 Open blocks can carry over to the next day if not completed.';
+      sheet.appendChild(carryNote);
+    }
+
+    // ── Schedule Type (only for Routine and Scheduled) ──
+    if (blockType !== 'open') {
+      const typeLabel = document.createElement('div');
+      typeLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px';
+      typeLabel.textContent = 'Date Range';
+      sheet.appendChild(typeLabel);
+
+      const typeRow = document.createElement('div');
+      typeRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px';
+      ['unlimited','limited'].forEach(t => {
+        const btn = document.createElement('button');
+        btn.textContent = t === 'unlimited' ? '∞ Unlimited' : '📅 Limited';
+        btn.style.cssText = `flex:1;padding:10px;border-radius:10px;border:1.5px solid ${schedType===t?'var(--accent)':'var(--border)'};background:${schedType===t?'rgba(0,255,136,.1)':'var(--bg3)'};color:${schedType===t?'var(--accent)':'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-display);transition:all .15s`;
+        btn.addEventListener('click', () => { savedActivity = actInput.value; schedType = t; build(); });
+        typeRow.appendChild(btn);
+      });
+      sheet.appendChild(typeRow);
+
+      // ── Date Range (if Limited) ──
+      if (schedType === 'limited') {
+        const drRow = document.createElement('div');
+        drRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px';
+
+        const fromWrap = document.createElement('div');
+        const fromLbl2 = document.createElement('div');
+        fromLbl2.style.cssText = 'font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:4px';
+        fromLbl2.textContent = 'From';
+        const fromBtn = document.createElement('button');
+        fromBtn.textContent = limitFromISO || 'Set Date';
+        fromBtn.style.cssText = 'width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:var(--font-mono);font-size:12px;cursor:pointer;text-align:left;font-weight:600';
+        fromWrap.appendChild(fromLbl2); fromWrap.appendChild(fromBtn);
+
+        const toWrap = document.createElement('div');
+        const toLbl2 = document.createElement('div');
+        toLbl2.style.cssText = fromLbl2.style.cssText; toLbl2.textContent = 'To';
+        const toBtn = document.createElement('button');
+        toBtn.textContent = limitToISO || 'Set Date';
+        toBtn.style.cssText = fromBtn.style.cssText;
+        toWrap.appendChild(toLbl2); toWrap.appendChild(toBtn);
+
+        drRow.appendChild(fromWrap); drRow.appendChild(toWrap);
+        sheet.appendChild(drRow);
+
+        const fromCalWrap = document.createElement('div');
+        fromCalWrap.style.cssText = 'margin-bottom:10px;display:none';
+        sheet.appendChild(fromCalWrap);
+        const toCalWrap = document.createElement('div');
+        toCalWrap.style.cssText = 'margin-bottom:10px;display:none';
+        sheet.appendChild(toCalWrap);
+
+        fromBtn.addEventListener('click', () => {
+          if (fromCalWrap.style.display !== 'none') { fromCalWrap.style.display = 'none'; return; }
+          toCalWrap.style.display = 'none';
+          fromCalWrap.innerHTML = '';
+          fromPicker = buildSingleDatePicker(limitFromISO);
+          fromCalWrap.appendChild(fromPicker.el);
+          const okBtn = document.createElement('button');
+          okBtn.textContent = 'OK';
+          okBtn.style.cssText = 'margin-top:8px;width:100%;padding:10px;border-radius:10px;background:var(--accent);color:var(--bg);font-weight:700;border:none;cursor:pointer;font-family:var(--font-display);font-size:14px';
+          okBtn.addEventListener('click', () => { limitFromISO = fromPicker.getSelected(); fromBtn.textContent = limitFromISO; fromCalWrap.style.display = 'none'; });
+          fromCalWrap.appendChild(okBtn);
+          fromCalWrap.style.display = 'block';
+          fromCalWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+        toBtn.addEventListener('click', () => {
+          if (toCalWrap.style.display !== 'none') { toCalWrap.style.display = 'none'; return; }
+          fromCalWrap.style.display = 'none';
+          toCalWrap.innerHTML = '';
+          toPicker = buildSingleDatePicker(limitToISO || limitFromISO);
+          toCalWrap.appendChild(toPicker.el);
+          const okBtn = document.createElement('button');
+          okBtn.textContent = 'OK';
+          okBtn.style.cssText = 'margin-top:8px;width:100%;padding:10px;border-radius:10px;background:var(--accent);color:var(--bg);font-weight:700;border:none;cursor:pointer;font-family:var(--font-display);font-size:14px';
+          okBtn.addEventListener('click', () => { limitToISO = toPicker.getSelected(); toBtn.textContent = limitToISO; toCalWrap.style.display = 'none'; });
+          toCalWrap.appendChild(okBtn);
+          toCalWrap.style.display = 'block';
+          toCalWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
+    }
+
+    // ── Repeat (dropdown) ──
+    const repLabel = document.createElement('div');
+    repLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px';
+    repLabel.textContent = 'Repeat';
+    sheet.appendChild(repLabel);
+
+    // For routine blocks, no "off" option; for open blocks limited options
+    let repeatOpts;
+    if (blockType === 'routine') {
+      repeatOpts = [
+        { val:'daily',   label:'🔁 Daily' },
+        { val:'weekly',  label:'📅 Weekly' },
+        { val:'monthly', label:'🗓 Monthly' },
+      ];
+      if (!['daily','weekly','monthly'].includes(repeatMode)) repeatMode = 'daily';
+    } else if (blockType === 'open') {
+      repeatOpts = [
+        { val:'off',     label:'⏸ One-time' },
+        { val:'daily',   label:'🔁 Daily' },
+        { val:'weekly',  label:'📅 Weekly' },
+        { val:'custom',  label:'🗂 Custom Dates' },
+      ];
+    } else {
+      repeatOpts = [
+        { val:'off',     label:'⏸ One-time' },
+        { val:'daily',   label:'🔁 Daily' },
+        { val:'weekly',  label:'📅 Weekly' },
+        { val:'monthly', label:'🗓 Monthly' },
+        { val:'custom',  label:'🗂 Custom Dates' },
+      ];
+    }
+
+    const repSelect = document.createElement('select');
+    repSelect.style.cssText = 'width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:12px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23555570\' stroke-width=\'2\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;box-sizing:border-box';
+    repeatOpts.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.val; opt.textContent = o.label;
+      if (repeatMode === o.val) opt.selected = true;
+      repSelect.appendChild(opt);
+    });
+    repSelect.addEventListener('change', () => { savedActivity = actInput.value; repeatMode = repSelect.value; build(); });
+    sheet.appendChild(repSelect);
+
+    // ── Custom Date Picker ──
+    const customCalWrap = document.createElement('div');
+    customCalWrap.style.cssText = 'margin-bottom:14px;' + (repeatMode === 'custom' ? '' : 'display:none');
+    sheet.appendChild(customCalWrap);
+
+    if (repeatMode === 'custom') {
+      const setDatesBtn = document.createElement('button');
+      setDatesBtn.textContent = customDates.length ? `📅 ${customDates.length} date${customDates.length>1?'s':''} selected — tap to change` : '📅 Set Dates';
+      setDatesBtn.style.cssText = 'width:100%;padding:11px 14px;border-radius:10px;border:1px solid rgba(0,120,255,0.4);background:rgba(0,120,255,0.08);color:#60aaff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-display);margin-bottom:8px;transition:all .15s';
+      customCalWrap.appendChild(setDatesBtn);
+
+      const datesPreview = document.createElement('div');
+      datesPreview.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6;min-height:16px;margin-bottom:8px;word-break:break-all';
+      datesPreview.textContent = customDates.length ? customDates.join(', ') : '';
+      customCalWrap.appendChild(datesPreview);
+
+      const calContainer = document.createElement('div');
+      calContainer.style.display = 'none';
+      customCalWrap.appendChild(calContainer);
+
+      setDatesBtn.addEventListener('click', () => {
+        if (calContainer.style.display !== 'none') { calContainer.style.display = 'none'; return; }
+        calContainer.innerHTML = '';
+        const rangeFrom = schedType === 'limited' ? limitFromISO : null;
+        const rangeTo = schedType === 'limited' ? limitToISO : null;
+        customCal = buildMiniCalendar({ rangeFrom, rangeTo, selected: customDates });
+        calContainer.appendChild(customCal.el);
+        const okBtn = document.createElement('button');
+        okBtn.textContent = '✓ OK';
+        okBtn.style.cssText = 'margin-top:10px;width:100%;padding:11px;border-radius:10px;background:var(--accent);color:var(--bg);font-weight:800;border:none;cursor:pointer;font-family:var(--font-display);font-size:14px';
+        okBtn.addEventListener('click', () => {
+          customDates = customCal.getSelected();
+          datesPreview.textContent = customDates.length ? customDates.join(', ') : '';
+          setDatesBtn.textContent = customDates.length ? `📅 ${customDates.length} date${customDates.length>1?'s':''} selected — tap to change` : '📅 Set Dates';
+          calContainer.style.display = 'none';
+          buildTimeSection();
+        });
+        calContainer.appendChild(okBtn);
+        calContainer.style.display = 'block';
+        calContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+
+    // ── Time Section (skip for Open blocks) ──
+    const timeSectionWrap = document.createElement('div');
+    sheet.appendChild(timeSectionWrap);
+
+    function buildTimeSection() {
+      timeSectionWrap.innerHTML = '';
+
+      // Open blocks don't have a specific time
+      if (blockType === 'open') return;
+
+      const timeLabel = document.createElement('div');
+      timeLabel.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:4px';
+      timeLabel.textContent = 'Time';
+      timeSectionWrap.appendChild(timeLabel);
+
+      if (repeatMode === 'custom' && customDates.length > 1) {
+        // Mode selector: same vs different
+        const modeRow = document.createElement('div');
+        modeRow.style.cssText = 'display:flex;gap:8px;margin-bottom:12px';
+        ['same','different'].forEach(m => {
+          const btn = document.createElement('button');
+          btn.textContent = m === 'same' ? '⏱ Same time' : '⏱ Different times';
+          btn.style.cssText = `flex:1;padding:9px;border-radius:10px;border:1.5px solid ${perDateMode===m?'var(--accent)':'var(--border)'};background:${perDateMode===m?'rgba(0,255,136,.1)':'var(--bg3)'};color:${perDateMode===m?'var(--accent)':'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-display);transition:all .15s`;
+          btn.addEventListener('click', () => { perDateMode = m; buildTimeSection(); });
+          modeRow.appendChild(btn);
+        });
+        timeSectionWrap.appendChild(modeRow);
+
+        if (perDateMode === 'same') {
+          const drumWrap = document.createElement('div');
+          drumWrap.id = 'time-drum-root-shared';
+          timeSectionWrap.appendChild(drumWrap);
+          requestAnimationFrame(() => { sharedDrumInst = buildTimeDrumEl(drumWrap, '6:00 AM'); });
+        } else {
+          // Per-date: show "Set Time" button for each date — opens a popup drum
+          customDates.forEach(dateISO => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:10px';
+            const dateLbl = document.createElement('div');
+            dateLbl.style.cssText = 'font-size:12px;font-family:var(--font-mono);color:var(--text);font-weight:600;flex:1';
+            dateLbl.textContent = dateISO;
+            const timeDisplay = document.createElement('div');
+            timeDisplay.style.cssText = 'font-size:12px;font-family:var(--font-mono);color:var(--accent);min-width:70px;text-align:right';
+            timeDisplay.textContent = perDateTimes[dateISO] || '—';
+            const setTimeBtn = document.createElement('button');
+            setTimeBtn.textContent = 'Set Time';
+            setTimeBtn.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid rgba(0,255,136,.35);background:rgba(0,255,136,.08);color:var(--accent);font-size:12px;font-family:var(--font-mono);font-weight:700;cursor:pointer;flex-shrink:0';
+            setTimeBtn.addEventListener('click', () => {
+              // Show time picker popup
+              const popOv = document.createElement('div');
+              popOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px)';
+              const popSheet = document.createElement('div');
+              popSheet.style.cssText = 'background:var(--bg2);border-radius:20px 20px 0 0;padding:20px 20px 32px;width:100%;max-width:480px;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1)';
+              const popHdr = document.createElement('div');
+              popHdr.style.cssText = 'font-size:14px;font-weight:800;margin-bottom:4px;text-align:center';
+              popHdr.textContent = `Set Time for ${dateISO}`;
+              const drumRoot = document.createElement('div');
+              drumRoot.style.cssText = 'margin:10px 0 16px';
+              const popOk = document.createElement('button');
+              popOk.className = 'btn btn-green';
+              popOk.style.cssText = 'width:100%';
+              popOk.textContent = '✓ Confirm';
+              popSheet.appendChild(popHdr);
+              popSheet.appendChild(drumRoot);
+              popSheet.appendChild(popOk);
+              popOv.appendChild(popSheet);
+              document.body.appendChild(popOv);
+              let drumInst;
+              requestAnimationFrame(() => { drumInst = buildTimeDrumEl(drumRoot, perDateTimes[dateISO] || '9:00 AM'); });
+              popOv.addEventListener('click', e => { if(e.target===popOv) document.body.removeChild(popOv); });
+              popOk.addEventListener('click', () => {
+                const t = drumInst ? drumInst.getTime() : '9:00 AM';
+                perDateTimes[dateISO] = t;
+                timeDisplay.textContent = t;
+                document.body.removeChild(popOv);
+              });
+            });
+            row.appendChild(dateLbl);
+            row.appendChild(timeDisplay);
+            row.appendChild(setTimeBtn);
+            timeSectionWrap.appendChild(row);
+          });
+          const helpTxt = document.createElement('div');
+          helpTxt.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:8px';
+          helpTxt.textContent = 'Tap Set Time for each date to assign a time.';
+          timeSectionWrap.appendChild(helpTxt);
+        }
+      } else {
+        const drumWrap = document.createElement('div');
+        drumWrap.id = 'time-drum-root-single';
+        timeSectionWrap.appendChild(drumWrap);
+        requestAnimationFrame(() => { sharedDrumInst = buildTimeDrumEl(drumWrap, '6:00 AM'); });
+      }
+    }
+
+    buildTimeSection();
+
+    // ── Footer Buttons ──
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;gap:10px;margin-top:20px;padding-top:12px;border-top:1px solid var(--border)';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-ghost';
+    cancelBtn.style.cssText = 'flex:1';
+    cancelBtn.textContent = 'Cancel';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-green';
+    addBtn.style.cssText = 'flex:2';
+    addBtn.textContent = '＋ Add Time Block';
+    footer.appendChild(cancelBtn);
+    footer.appendChild(addBtn);
+    sheet.appendChild(footer);
+
+    const close = () => document.body.removeChild(ov);
+    cancelBtn.addEventListener('click', close);
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+
+    addBtn.addEventListener('click', () => {
+      const activity = actInput.value.trim();
+      if (!activity) { showToast('Enter an activity'); actInput.focus(); return; }
+
+      if (!S.config) S.config = { schedule: [], habitDefinitions: {}, habitTracker: { enabled: true, snoozeOptions: [5, 10] } };
+
+      const baseItem = {
+        activity,
+        repeat: repeatMode,
+        createdOn: today,
+        blockType: blockType, // store block type metadata
+      };
+
+      // Duration for open blocks (store in activity or as separate field)
+      if (blockType === 'open') {
+        const durVal = parseInt(sheet.querySelector('#add-dur-input')?.value) || 30;
+        baseItem.duration = durVal;
+        baseItem.time = '8:00 AM'; // default time for open blocks
+        baseItem.canCarryOver = true;
+        // No specific time enforcement for open blocks
+        baseItem.time = '8:00 AM';
+      }
+
+      if (blockType !== 'open' && schedType === 'limited') {
+        if (limitFromISO) baseItem.limitFrom = limitFromISO;
+        if (limitToISO) baseItem.limitTo = limitToISO;
+      }
+
+      if (repeatMode === 'custom') {
+        if (!customDates.length) { showToast('Select at least one date'); return; }
+        baseItem.customDates = customDates;
+
+        if (blockType !== 'open' && customDates.length > 1 && perDateMode === 'different') {
+          customDates.forEach(dateISO => {
+            const time = perDateTimes[dateISO] || '9:00 AM';
+            S.config.schedule.push({ ...baseItem, time, createdOn: dateISO, customDates: [dateISO] });
+          });
+        } else {
+          const time = blockType === 'open' ? '8:00 AM' : (sharedDrumInst ? sharedDrumInst.getTime() : '6:00 AM');
+          baseItem.time = time;
+          S.config.schedule.push(baseItem);
+        }
+      } else {
+        const time = blockType === 'open' ? '8:00 AM' : (sharedDrumInst ? sharedDrumInst.getTime() : '6:00 AM');
+        baseItem.time = time;
+        S.config.schedule.push(baseItem);
+      }
+
+      try { S.config.schedule.sort((x, y) => schedDate(x.time) - schedDate(y.time)); } catch {}
+      LS.set('lastConfig', S.config);
+      saveScheduleToVault();
+      forceSwUpdate();
+      close();
+      onDone();
+      showToast('✓ Time Block added');
+    });
+  }
+
+  document.body.appendChild(ov);
+  build();
+}
+
+// ── DRUM BUILDER (by element reference, not ID) ───────────────────────────────
+function buildTimeDrumEl(container, initialTime) {
+  const hours   = ['12','1','2','3','4','5','6','7','8','9','10','11'];
+  const minutes = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
+  const ampm    = ['AM','PM'];
+
+  let initH = 6, initM = 0, initAP = 0;
+  if (initialTime) {
+    const m = initialTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (m) {
+      initH  = parseInt(m[1]) % 12;
+      initM  = Math.round(parseInt(m[2]) / 5);
+      initAP = m[3].toUpperCase() === 'PM' ? 1 : 0;
+    }
+  }
+
+  function makeDrum(items, initIdx, extraClass, loop) {
+    const col = document.createElement('div');
+    col.className = 'time-drum-col';
+    const drum = document.createElement('div');
+    drum.className = 'time-drum' + (extraClass ? ' ' + extraClass : '');
+    const inner = document.createElement('div');
+    inner.className = 'time-drum-inner';
+    const highlight = document.createElement('div');
+    highlight.className = 'time-drum-highlight';
+    drum.appendChild(highlight);
+    drum.appendChild(inner);
+    col.appendChild(drum);
+
+    const ITEM_H = 44, DRUM_H = 140;
+    const VISIBLE = Math.floor(DRUM_H / ITEM_H);
+    const PAD = Math.floor(VISIBLE / 2);
+    const renderItems = loop ? [...items,...items,...items] : items;
+    const offset = loop ? items.length : 0;
+
+    for (let p=0;p<PAD;p++) { const pd=document.createElement('div'); pd.className='time-drum-item'; inner.appendChild(pd); }
+    renderItems.forEach(val => {
+      const it=document.createElement('div'); it.className='time-drum-item'; it.textContent=val; inner.appendChild(it);
+    });
+    for (let p=0;p<PAD;p++) { const pd=document.createElement('div'); pd.className='time-drum-item'; inner.appendChild(pd); }
+
+    let selected=Math.max(0,Math.min(items.length-1,initIdx));
+    let startY=0,isDragging=false;
+    function getRenderIdx(){ return loop?offset+selected:selected; }
+    function getTranslateY(){ return -getRenderIdx()*ITEM_H; }
+    function render(animate){
+      inner.style.transition=animate?'transform .2s cubic-bezier(.25,.8,.25,1)':'none';
+      inner.style.transform=`translateY(${getTranslateY()}px)`;
+      inner.querySelectorAll('.time-drum-item').forEach((el,i)=>el.classList.toggle('selected',i===PAD+getRenderIdx()));
+    }
+    function moveTo(n){
+      selected=loop?(((n%items.length)+items.length)%items.length):Math.max(0,Math.min(items.length-1,n));
+      render(true);
+    }
+    drum.addEventListener('pointerdown',e=>{ isDragging=true;startY=e.clientY;inner.style.transition='none';drum.setPointerCapture(e.pointerId); });
+    drum.addEventListener('pointermove',e=>{ if(!isDragging)return; inner.style.transform=`translateY(${getTranslateY()+(e.clientY-startY)}px)`; });
+    drum.addEventListener('pointerup',e=>{ if(!isDragging)return;isDragging=false;moveTo(selected-Math.round((e.clientY-startY)/ITEM_H)); });
+    drum.addEventListener('wheel',e=>{ e.preventDefault();moveTo(selected+(e.deltaY>0?1:-1)); },{passive:false});
+    render(false);
+    return { col, getSelected: ()=>items[selected] };
+  }
+
+  const hDrum=makeDrum(hours,initH,'',true);
+  const mDrum=makeDrum(minutes,initM,'',true);
+  const apDrum=makeDrum(ampm,initAP,'ampm-drum',false);
+  const colon=document.createElement('div');
+  colon.className='time-colon'; colon.textContent=':';
+  container.innerHTML='';
+  container.className='time-picker-wrap';
+  container.appendChild(hDrum.col);
+  container.appendChild(colon);
+  container.appendChild(mDrum.col);
+  container.appendChild(apDrum.col);
+  return { getTime: ()=>`${hDrum.getSelected()}:${mDrum.getSelected()} ${apDrum.getSelected()}` };
 }
 
 // ── EDIT SINGLE SCHEDULE ENTRY ─────────────────────────────────────────────
-function showEditSchedulePopup(currentTime, currentActivity, onSave) {
-  showSchedulePopup('Edit Entry', currentTime, currentActivity, '✓ Save', onSave);
+function showEditSchedulePopup(currentTime, currentActivity, currentRepeat, onSave) {
+  showSchedulePopup('Edit Entry', currentTime, currentActivity, '✓ Save', onSave, currentRepeat || 'daily');
 }
 
 async function saveScheduleToVault() {
@@ -2061,6 +3487,12 @@ function rebuildScheduleInMd(text, schedule) {
   schedule.forEach(item => {
     schedLines.push(`- time: '${item.time}'`);
     schedLines.push(`  activity: '${item.activity}'`);
+    if (item.repeat && item.repeat !== 'daily') schedLines.push(`  repeat: ${item.repeat}`);
+    if (item.createdOn) schedLines.push(`  createdOn: '${item.createdOn}'`);
+    if (item.customDates && item.customDates.length) schedLines.push(`  customDates: '${JSON.stringify(item.customDates)}'`);
+    if (item.limitFrom) schedLines.push(`  limitFrom: '${item.limitFrom}'`);
+    if (item.limitTo) schedLines.push(`  limitTo: '${item.limitTo}'`);
+    if (item.perDateTimes) schedLines.push(`  perDateTimes: '${JSON.stringify(item.perDateTimes)}'`);
   });
   const lines = yaml.split('\n'); const out = []; let inBlock = false;
   for (const line of lines) {
@@ -2197,6 +3629,15 @@ async function restoreLogTemplateHandle() {
   } catch {}
 }
 
+async function restoreLogOutputHandle() {
+  try {
+    const dh = await IDB.get('logOutputHandle');
+    if (!dh) return;
+    try { await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    S.logOutputDirHandle = dh;
+  } catch {}
+}
+
 async function pickLogOutputFolder() {
   try {
     const dh = await window.showDirectoryPicker({ mode: 'readwrite', id: 'logOutput' });
@@ -2211,15 +3652,235 @@ async function pickLogOutputFolder() {
   }
 }
 
-async function restoreLogOutputHandle() {
+// ── EVENTS SYSTEM ─────────────────────────────────────────────────────────
+// Events are stored as individual .md files in the events folder.
+// Each file has YAML frontmatter: title, date (YYYY-MM-DD), time (HH:MM optional), note
+
+async function pickEventsFolder() {
   try {
-    const dh = await IDB.get('logOutputHandle');
+    const dh = await window.showDirectoryPicker({ mode: 'readwrite' });
+    S.eventsDirHandle = dh;
+    await IDB.set('eventsHandle', dh);
+    LS.set('eventsFolderName', dh.name);
+    S._permGranted.events = true;
+    showToast(`✓ Events folder: ${dh.name}`);
+    return true;
+  } catch { return false; }
+}
+
+async function restoreEventsHandle() {
+  try {
+    const dh = await IDB.get('eventsHandle');
     if (!dh) return;
-    try { await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    // Store handle regardless — permission will be re-requested on first use (inside click handler)
-    S.logOutputDirHandle = dh;
+    S.eventsDirHandle = dh;
   } catch {}
 }
+
+async function loadEvents() {
+  if (!S.eventsDirHandle) return [];
+  try {
+    if (!S._permGranted.events) {
+      const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
+      if (p !== 'granted') return [];
+      S._permGranted.events = true;
+    }
+    const events = [];
+    for await (const entry of S.eventsDirHandle.values()) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue;
+      try {
+        const file = await entry.getFile();
+        const text = await file.text();
+        const titleM  = text.match(/^title:\s*(.+)/m);
+        const dateM   = text.match(/^date:\s*(\d{4}-\d{2}-\d{2})/m);
+        const timeM   = text.match(/^time:\s*(.+)/m);
+        const noteM   = text.match(/^note:\s*(.+)/m);
+        if (!titleM || !dateM) continue;
+        const body = text.replace(/^---[\s\S]*?---\s*/m, '').trim();
+        events.push({
+          filename: entry.name,
+          handle: entry,
+          title: titleM[1].trim().replace(/^["']|["']$/g, ''),
+          date: dateM[1].trim(),
+          time: timeM ? timeM[1].trim() : '',
+          note: noteM ? noteM[1].trim().replace(/^["']|["']$/g, '') : body.slice(0, 80),
+        });
+      } catch {}
+    }
+    events.sort((a, b) => a.date.localeCompare(b.date));
+    return events;
+  } catch { return []; }
+}
+
+async function saveEvent(ev, oldFilename) {
+  if (!S.eventsDirHandle) { showToast('No events folder set'); return false; }
+  if (!S._permGranted.events) {
+    const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
+    if (p !== 'granted') { showToast('Permission denied'); return false; }
+    S._permGranted.events = true;
+  }
+  const slug = ev.title.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 30);
+  const filename = oldFilename || `${ev.date.replace(/-/g,'')}_${slug}.md`;
+  const content = `---\ntitle: ${JSON.stringify(ev.title)}\ndate: ${ev.date}\n${ev.time ? 'time: ' + ev.time + '\n' : ''}${ev.note ? 'note: ' + JSON.stringify(ev.note) + '\n' : ''}---\n${ev.note || ''}`;
+  try {
+    if (oldFilename && oldFilename !== filename) {
+      try { await S.eventsDirHandle.removeEntry(oldFilename); } catch {}
+    }
+    const fh = await S.eventsDirHandle.getFileHandle(filename, { create: true });
+    const w = await fh.createWritable(); await w.write(content); await w.close();
+    return true;
+  } catch (e) { showToast('Save failed: ' + e.message); return false; }
+}
+
+async function deleteEvent(filename) {
+  if (!S.eventsDirHandle) return;
+  try { await S.eventsDirHandle.removeEntry(filename); } catch {}
+}
+
+function showAddEventSheet(existingEvent, onSaved) {
+  const isEdit = !!existingEvent;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const ov = document.createElement('div'); ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal" style="max-width:340px">
+    <div class="modal-handle"></div>
+    <div style="font-size:16px;font-weight:800;margin-bottom:16px">${isEdit ? '✎ Edit Event' : '＋ New Event'}</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="ev-title" type="text" placeholder="Event title" value="${isEdit ? existingEvent.title.replace(/"/g,'&quot;') : ''}"
+        style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none"/>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:4px;letter-spacing:.5px">DATE</div>
+          <input id="ev-date" type="date" value="${isEdit ? existingEvent.date : todayISO}"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;color-scheme:dark"/>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:4px;letter-spacing:.5px">TIME (optional)</div>
+          <input id="ev-time" type="time" value="${isEdit ? existingEvent.time : ''}"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;color-scheme:dark"/>
+        </div>
+      </div>
+      <textarea id="ev-note" placeholder="Notes (optional)" rows="3"
+        style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;resize:vertical">${isEdit ? (existingEvent.note||'').replace(/</g,'&lt;') : ''}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-green" id="ev-save" style="flex:2">${isEdit ? '✓ Save' : '＋ Add'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  setTimeout(() => ov.querySelector('#ev-title').focus(), 80);
+
+  ov.querySelector('#ev-save').addEventListener('click', async () => {
+    const title = ov.querySelector('#ev-title').value.trim();
+    const date  = ov.querySelector('#ev-date').value;
+    const time  = ov.querySelector('#ev-time').value;
+    const note  = ov.querySelector('#ev-note').value.trim();
+    if (!title) { showToast('Enter a title'); return; }
+    if (!date)  { showToast('Pick a date'); return; }
+    const btn = ov.querySelector('#ev-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const ok = await saveEvent({ title, date, time, note }, isEdit ? existingEvent.filename : null);
+    if (ok) { ov.remove(); if (onSaved) onSaved(); showToast(isEdit ? '✓ Event updated' : '✓ Event added'); }
+    else { btn.disabled = false; btn.textContent = isEdit ? '✓ Save' : '＋ Add'; }
+  });
+}
+
+async function renderEventsCard() {
+  const card = document.getElementById('card-events');
+  if (!card) return;
+  const body = card.querySelector('.card-body');
+  if (!body) return;
+
+  if (!S.eventsDirHandle) {
+    body.innerHTML = `<div class="empty-state" style="padding:16px 0;line-height:1.8;font-size:12px;font-family:var(--font-mono);color:var(--muted);text-align:center">
+      No events folder set<br>
+      <button onclick="showSettings()" style="margin-top:8px;padding:6px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:11px;font-family:var(--font-mono);cursor:pointer">⚙ Open Settings</button>
+    </div>`;
+    return;
+  }
+
+  const events = await loadEvents();
+  const now = new Date(); now.setHours(0,0,0,0);
+  const upcoming = events.filter(e => new Date(e.date + 'T00:00:00') >= now);
+  const past = events.filter(e => new Date(e.date + 'T00:00:00') < now).slice(-2).reverse();
+
+  function daysUntil(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    const diff = Math.round((d - now) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff < 7) return `In ${diff} days`;
+    if (diff < 30) return `In ${Math.round(diff/7)}w`;
+    if (diff < 365) return `In ${Math.round(diff/30)}mo`;
+    return `${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+  }
+
+  function eventHTML(ev, isPast) {
+    const ds = daysUntil(ev.date);
+    return `<div class="event-row${isPast?' event-past':''}" data-filename="${ev.filename}" style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;margin-bottom:4px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);cursor:pointer;transition:background .1s">
+      <div style="flex-shrink:0;text-align:center;min-width:36px">
+        <div style="font-size:10px;font-family:var(--font-mono);color:${isPast?'var(--muted)':'var(--accent)'};font-weight:700">${isPast ? new Date(ev.date+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}) : ds}</div>
+        ${ev.time ? `<div style="font-size:9px;font-family:var(--font-mono);color:var(--muted)">${ev.time}</div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:${isPast?'var(--muted)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.title}</div>
+        ${ev.note ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.note}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  let html = '';
+  if (upcoming.length === 0 && past.length === 0) {
+    html = `<div style="text-align:center;font-size:12px;font-family:var(--font-mono);color:var(--muted);padding:12px 0">No upcoming events</div>`;
+  } else {
+    if (upcoming.length) html += upcoming.map(e => eventHTML(e, false)).join('');
+    if (past.length) {
+      html += `<div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;padding:6px 2px 2px">Past</div>`;
+      html += past.map(e => eventHTML(e, true)).join('');
+    }
+  }
+  html += `<button id="ev-add-btn" class="btn btn-ghost" style="width:100%;margin-top:6px;font-size:12px">＋ Add Event</button>`;
+  body.innerHTML = html;
+
+  body.querySelectorAll('.event-row').forEach(row => {
+    row.addEventListener('click', async () => {
+      const filename = row.dataset.filename;
+      const ev = events.find(e => e.filename === filename);
+      if (!ev) return;
+      // Show detail/edit popup
+      const dov = document.createElement('div'); dov.className = 'modal-overlay';
+      const ds2 = daysUntil(ev.date);
+      dov.innerHTML = `<div class="modal" style="max-width:340px">
+        <div class="modal-handle"></div>
+        <div style="font-size:18px;font-weight:800;margin-bottom:6px">${ev.title}</div>
+        <div style="font-size:12px;font-family:var(--font-mono);color:var(--accent);margin-bottom:4px">${ev.date}${ev.time?' · '+ev.time:''} · <span style="color:var(--muted)">${ds2}</span></div>
+        ${ev.note ? `<div style="font-size:13px;color:var(--muted);font-family:var(--font-mono);margin:10px 0;line-height:1.6">${ev.note.replace(/</g,'&lt;')}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" style="flex:1" id="dev-edit">✎ Edit</button>
+          <button class="btn btn-ghost" style="flex:1;color:var(--danger);border-color:rgba(255,68,102,.3)" id="dev-del">✕ Delete</button>
+          <button class="btn btn-ghost" style="flex:1" id="dev-close">Close</button>
+        </div>
+      </div>`;
+      document.body.appendChild(dov);
+      const dclose = () => dov.remove();
+      dov.addEventListener('click', e => { if (e.target === dov) dclose(); });
+      dov.querySelector('#dev-close').addEventListener('click', dclose);
+      dov.querySelector('#dev-edit').addEventListener('click', () => { dclose(); showAddEventSheet(ev, () => renderEventsCard()); });
+      dov.querySelector('#dev-del').addEventListener('click', async () => {
+        if (!confirm(`Delete "${ev.title}"?`)) return;
+        await deleteEvent(ev.filename);
+        dclose();
+        renderEventsCard();
+        showToast('Event deleted');
+      });
+    });
+  });
+
+  body.querySelector('#ev-add-btn')?.addEventListener('click', () => {
+    showAddEventSheet(null, () => renderEventsCard());
+  });
+}
+
+// ── END EVENTS SYSTEM ──────────────────────────────────────────────────────
 
 async function reconnectLogTemplate() {
   const fh = S._pendingLogHandle || await IDB.get('logTemplateHandle').catch(()=>null);
@@ -2477,56 +4138,74 @@ let _logsSpacerEl = null;
 let _logsRenderedRange = { start: 0, end: 0 };
 let _logsNodes = {};    // index → DOM node (pooled)
 
-let _logsDateFilter = 'today'; // 'today' | 'month' | 'year' | 'all'
+let _logsDateFilter = 'today'; // 'today' | 'week' | 'month' | 'year' | 'all'
 
-async function renderLogsTab() {
-  const tab = document.getElementById('logs-tab');
-  if (!tab) return;
-
-  // Build the scaffold once
-  if (!_logsTabMounted) {
-    _logsTabMounted = true;
-    tab.style.cssText = 'display:flex;flex-direction:column;gap:0;padding:12px 16px 80px;min-height:0;overflow:hidden';
-    tab.innerHTML = `
-      <div class="logs-toolbar">
-        <input class="logs-search" id="logs-search" type="search" placeholder="Search logs…" autocomplete="off"/>
-        <select id="logs-date-filter" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;cursor:pointer;flex-shrink:0">
+// ── LOGS POPUP ───────────────────────────────────────────────────────────────
+function showLogsPopup() {
+  const existing = document.getElementById('logs-popup-ov');
+  if (existing) { existing.remove(); return; }
+  const ov = document.createElement('div');
+  ov.id = 'logs-popup-ov';
+  ov.className = 'modal-overlay';
+  ov.style.cssText = 'align-items:flex-end;z-index:300';
+  ov.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px 20px 0 0;width:100%;max-width:480px;height:88dvh;display:flex;flex-direction:column;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1);overflow:hidden">
+    <div style="padding:14px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <span style="font-size:14px;font-weight:800;letter-spacing:-.3px">Archive</span>
+      <button id="lp-close" style="width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1">✕</button>
+    </div>
+    <div id="lp-body" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:10px 16px 16px">
+      <div class="logs-toolbar" style="margin-bottom:10px">
+        <input class="logs-search" id="lp-search" type="search" placeholder="Search logs…" autocomplete="off"/>
+        <select id="lp-date-filter" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;cursor:pointer;flex-shrink:0">
           <option value="today">Today</option>
+          <option value="week">This Week</option>
           <option value="month">This Month</option>
           <option value="year">This Year</option>
           <option value="all">All Time</option>
         </select>
       </div>
-      <div class="logs-container" id="logs-container">
-        <div class="logs-viewport" id="logs-viewport">
-          <div class="logs-spacer" id="logs-spacer"></div>
+      <div style="flex:1;min-height:0;position:relative">
+        <div class="logs-viewport" id="lp-viewport" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+          <div class="logs-spacer" id="lp-spacer"></div>
         </div>
       </div>
-      <div class="logs-status" id="logs-status"></div>`;
+      <div class="logs-status" id="lp-status" style="margin-top:6px"></div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  ov.querySelector('#lp-close').addEventListener('click', () => ov.remove());
 
-    _logsViewport = tab.querySelector('#logs-viewport');
-    _logsSpacerEl = tab.querySelector('#logs-spacer');
+  // Reset log state for fresh popup render
+  _logsTabMounted = false;
+  _allLogs = [];
+  _filteredLogs = [];
+  _logsNodes = {};
+  _logsRenderedRange = { start: 0, end: 0 };
+  _logsViewport = ov.querySelector('#lp-viewport');
+  _logsSpacerEl = ov.querySelector('#lp-spacer');
+  window._logsStatusElId = 'lp-status';
 
-    tab.querySelector('#logs-container').style.flex = '1';
-    tab.querySelector('#logs-container').style.minHeight = '0';
+  _logsViewport.addEventListener('scroll', () => _logsVirtualRender(), { passive: true });
+  ov.querySelector('#lp-search').addEventListener('input', e => {
+    _logsSearchQ = e.target.value.trim().toLowerCase(); _logsApplyFilter();
+  });
+  ov.querySelector('#lp-date-filter').addEventListener('change', e => {
+    _logsDateFilter = e.target.value; if (S.logOutputDirHandle) _logsApplyFilter();
+  });
 
-    _logsViewport.addEventListener('scroll', () => _logsVirtualRender(), { passive: true });
+  // Clean up when popup closes
+  ov.addEventListener('animationend', () => {});
+  const obs = new MutationObserver(() => {
+    if (!document.contains(ov)) { _logsViewport = null; _logsSpacerEl = null; obs.disconnect(); }
+  });
+  obs.observe(document.body, { childList: true });
 
-    tab.querySelector('#logs-search').addEventListener('input', e => {
-      _logsSearchQ = e.target.value.trim().toLowerCase();
-      _logsApplyFilter();
-    });
-    tab.querySelector('#logs-date-filter').addEventListener('change', e => {
-      _logsDateFilter = e.target.value;
-      if (S.logOutputDirHandle) _logsApplyFilter();
-    });
-  }
+  loadAllLogs();
+}
 
-  if (!_logsLoading && _allLogs.length === 0) {
-    await loadAllLogs();
-  } else {
-    _logsVirtualRender();
-  }
+async function renderLogsTab() {
+  // No-op — logs are now in the Archive popup (showLogsPopup)
 }
 
 async function loadAllLogs() {
@@ -2574,6 +4253,9 @@ function _logsApplyFilter() {
   const todayStr2 = now.toISOString().slice(0, 10).replace(/-/g, '');
   const monthStr = now.toISOString().slice(0, 7).replace(/-/g, '');
   const yearStr  = now.getFullYear().toString();
+  // Week: compute YYYYMMDD for start of week (Monday)
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - ((now.getDay()+6)%7)); weekStart.setHours(0,0,0,0);
+  const weekStartNum = parseInt(weekStart.toISOString().slice(0,10).replace(/-/g,''));
 
   let base = _allLogs;
 
@@ -2582,6 +4264,11 @@ function _logsApplyFilter() {
     base = base.filter(l => {
       const fn = l.filename;
       if (_logsDateFilter === 'today') return fn.includes(todayStr2);
+      if (_logsDateFilter === 'week') {
+        // extract YYYYMMDD from filename
+        const m = fn.match(/(\d{8})/); if (!m) return false;
+        return parseInt(m[1]) >= weekStartNum;
+      }
       if (_logsDateFilter === 'month') return fn.includes(monthStr) || fn.startsWith(yearStr + '/' + now.toISOString().slice(5,7));
       if (_logsDateFilter === 'year')  return fn.includes(yearStr) || l.path.startsWith(yearStr + '/');
       return true;
@@ -2606,7 +4293,7 @@ function _logsApplyFilter() {
 
   _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
   if (_filteredLogs.length === 0) {
-    _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : `No logs for ${_logsDateFilter === 'today' ? 'today' : _logsDateFilter === 'month' ? 'this month' : _logsDateFilter === 'year' ? 'this year' : 'selected period'}.`);
+    _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : `No logs for ${_logsDateFilter === 'today' ? 'today' : _logsDateFilter === 'week' ? 'this week' : _logsDateFilter === 'month' ? 'this month' : _logsDateFilter === 'year' ? 'this year' : 'selected period'}.`);
     return;
   }
   const emp = _logsViewport?.querySelector('.logs-empty');
@@ -2628,7 +4315,8 @@ function _logsSetEmpty(msg) {
 }
 
 function _setLogsStatus(msg) {
-  const el = document.getElementById('logs-status');
+  const id = window._logsStatusElId || 'logs-status';
+  const el = document.getElementById(id);
   if (el) el.textContent = msg;
 }
 
@@ -2729,13 +4417,16 @@ function _renderLogNode(node, log) {
 
 async function _openLogDetail(log) {
   if (!log.loaded) await _loadLogPreview(log);
+  // Strip YAML frontmatter — show only body after closing ---
+  const raw = log._fullText || log.preview || '';
+  const bodyOnly = raw.replace(/^---[\s\S]*?---\s*/m, '').trim() || raw.trim();
+
   const ov = document.createElement('div'); ov.className = 'modal-overlay';
   ov.innerHTML = `<div class="modal" style="max-height:88dvh;overflow-y:auto">
     <div class="modal-handle"></div>
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-bottom:4px">${log.dateLabel || log.filename}</div>
-    <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:14px">${log.path}</div>
     ${log.tags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${log.tags.map(t=>`<span class="log-item-tag">#${t}</span>`).join('')}</div>` : ''}
-    <div class="log-detail-body" id="ld-body">${(log._fullText || log.preview || '').replace(/</g,'&lt;')}</div>
+    <div class="log-detail-body" id="ld-body">${bodyOnly.replace(/</g,'&lt;')}</div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btn-ghost" style="flex:1;font-size:13px" id="ld-edit">✎ Edit</button>
       <button class="btn btn-ghost" style="flex:1;font-size:13px;color:var(--danger);border-color:rgba(255,68,102,.3)" id="ld-delete">✕ Delete</button>
@@ -2995,6 +4686,23 @@ function showSettings() {
     <div class="modal-title">Settings</div>
 
     <div class="s-section">
+      <div class="s-section-title">📅 Calendar Heat Colors</div>
+      <div style="font-size:12px;font-family:var(--font-mono);color:var(--muted);margin-bottom:12px;line-height:1.6">The calendar view colors each day based on how many tasks are scheduled — from free to fully packed.</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-0" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">0 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Completely free</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-1" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">1–2 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Light day</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-2" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">3–4 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Moderate</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-3" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">5–6 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Busy</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-4" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">7–8 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Very busy</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-5" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">9–10 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Packed</div></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-6" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">11+ tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Max load — fully packed</div></div></div>
+      </div>
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6">
+        💡 <b style="color:var(--text)">Tip:</b> Tap any day in the calendar to see its tasks broken down by Daily / Weekly / Monthly / Custom tabs below.
+      </div>
+    </div>
+
+    <div class="s-section">
       <div class="s-section-title">Appearance</div>
       <div class="s-row" style="flex-direction:column;align-items:stretch;gap:10px">
         <div class="s-label">Theme</div>
@@ -3031,6 +4739,18 @@ function showSettings() {
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
       <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Habit Tracker Folder</button>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Events</div>
+      <div class="s-row">
+        <div>
+          <div class="s-label">📁 ${LS.get('eventsFolderName') || 'Not set'}</div>
+          <div class="s-sub">Folder where event .md files are stored</div>
+        </div>
+        <span class="pill ${S.eventsDirHandle?'pill-green':'pill-amber'}">${S.eventsDirHandle?'SET':'UNSET'}</span>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-events">Set Events Folder</button>
     </div>
 
     <div class="s-section">
@@ -3085,6 +4805,7 @@ function showSettings() {
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
+  ov.querySelector('#s-set-events')?.addEventListener('click', async () => { close(); await pickEventsFolder(); renderEventsCard(); showSettings(); });
   ov.querySelector('#s-set-log-template').addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
   ov.querySelector('#s-set-log-output').addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
 
@@ -3404,17 +5125,22 @@ function buildSkeleton() {
         <span class="card-label">Now</span>
         <button class="pomo-btn" id="pomo-btn" title="Focus Timer"><div class="pomo-dot"></div></button>
       </div>
-      <div class="card-body"></div>
+      <div class="card-body" style="padding:0">
+        <div style="display:flex;min-height:0">
+          <div id="countdown-left" style="flex:1;min-width:0;padding:14px 16px 16px;border-right:1px solid var(--border)"></div>
+          <div id="countdown-event" style="width:120px;flex-shrink:0;padding:12px 10px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:4px;cursor:pointer" id="countdown-event"></div>
+        </div>
+      </div>
     </div>
     <div class="card" id="card-log" style="animation-delay:.05s">
       <div class="card-header"><span class="card-label">Log</span></div>
       <div class="card-body">
         <div style="display:flex;gap:10px">
           <button id="log-text-btn" style="flex:1;min-width:0;padding:14px 10px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;font-size:13px;font-family:var(--font-display);font-weight:700" title="Text Log">
-            <span style="font-size:22px;line-height:1;flex-shrink:0">📝</span><span>Text Log</span>
+            <span style="font-size:22px;line-height:1;flex-shrink:0">📝</span><span>Log</span>
           </button>
           <button id="log-audio-btn" style="flex:1;min-width:0;padding:14px 10px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;font-size:13px;font-family:var(--font-display);font-weight:700" title="Audio Log">
-            <span style="font-size:22px;line-height:1;flex-shrink:0">🎙️</span><span>Audio Log</span>
+            <span style="font-size:22px;line-height:1;flex-shrink:0">📋</span><span>Archive</span>
           </button>
         </div>
       </div>
@@ -3435,6 +5161,7 @@ function buildSkeleton() {
 
   // ── Log text button ──
   document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
+  document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
   document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
@@ -3446,13 +5173,12 @@ function buildSkeleton() {
   });
 
   const panels = document.getElementById('tab-panels');
-  panels.style.transform = 'translateX(0%)';
-  // With 3 panels, each panel is 33.333% wide so translateX needs matching values
-  // (handled in switchTab)
+  const panelEls = panels.querySelectorAll('.tab-panel');
+  // Init: tab 0 active, tab 1 to the right (default via CSS)
+  panelEls[0].classList.add('active');
 
   let activeTab = 0;
   let editMode = false;
-  let touchStartX = 0, touchStartY = 0, isSwiping = false;
 
   // ── Done FAB (visible only in edit mode) ──
   const fab = document.createElement('button');
@@ -3514,71 +5240,96 @@ function buildSkeleton() {
   // Expose for empty-state long-press
   S._enterSchedEdit = enterEditMode;
 
+  function updatePanelClasses(idx) {
+    panelEls.forEach((p, i) => {
+      p.classList.toggle('active', i === idx);
+      p.classList.toggle('left',   i < idx);
+    });
+  }
+
   function switchTab(idx) {
     if (idx === activeTab) return;
     if (S._habitEditMode) { S._habitEditMode = false; renderHabitBars(); }
-    // Auto-commit schedule edits when leaving schedule tab
     if (activeTab === 1 && editMode) exitEditMode();
     activeTab = idx;
-    panels.style.transform = `translateX(${-idx * (100/3)}%)`;
+    updatePanelClasses(idx);
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
     fab.style.display = (idx === 1 && editMode) ? 'flex' : 'none';
     addFab.classList.toggle('visible', idx === 1 && editMode);
     if (idx === 1) renderScheduleTab(false);
-    if (idx === 2) renderLogsTab();
   }
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(parseInt(btn.dataset.tab)));
   });
 
+  // ── Swipe between tabs ──
+  // Panels are absolute, full-width. CSS classes (.active / .left) position them.
+  // During a drag we offset EACH panel by the same dx using a data attribute + inline style.
+  let swipeStartX = 0, swipeStartY = 0;
+  let swipeTracking = false, swipeDecided = false;
+
+  function applyDragOffset(dx) {
+    panelEls.forEach(p => {
+      p.classList.add('dragging');
+      p.style.marginLeft = dx + 'px';
+    });
+  }
+
+  function clearDragOffset() {
+    panelEls.forEach(p => {
+      p.classList.remove('dragging');
+      p.style.marginLeft = '';
+    });
+  }
+
   panels.addEventListener('touchstart', e => {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    isSwiping = false;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+    swipeTracking = false;
+    swipeDecided  = false;
   }, { passive: true });
 
   panels.addEventListener('touchmove', e => {
-    const dx = e.touches[0].clientX - touchStartX;
-    const dy = e.touches[0].clientY - touchStartY;
-    if (!isSwiping) {
-      if (Math.abs(dy) > Math.abs(dx) + 5) return; // clearly vertical — ignore
-      if (Math.abs(dx) > 8) isSwiping = true;
-      else return;
+    const dx = e.touches[0].clientX - swipeStartX;
+    const dy = e.touches[0].clientY - swipeStartY;
+
+    if (!swipeDecided) {
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      swipeDecided  = true;
+      swipeTracking = Math.abs(dx) >= Math.abs(dy);
     }
-    if (isSwiping) {
-      // Live drag using pure pixel offset to avoid mixed unit glitches
-      const containerW = panels.parentElement.clientWidth;
-      const baseX = -activeTab * containerW;
-      const clampedDx = Math.max(-containerW, Math.min(containerW, dx));
-      panels.style.transition = 'none';
-      panels.style.transform = `translateX(${baseX + clampedDx}px)`;
-    }
+    if (!swipeTracking) return;
+
+    // Clamp: can't pull right on tab 0, can't pull left on last tab
+    const clampedDx = activeTab === 0 ? Math.min(0, dx)
+                    : activeTab === 1 ? Math.max(0, dx)
+                    : dx;
+    applyDragOffset(clampedDx);
   }, { passive: true });
 
   panels.addEventListener('touchend', e => {
-    if (!isSwiping) return;
-    isSwiping = false;
-    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (!swipeTracking) return;
+    swipeTracking = false;
+    swipeDecided  = false;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    clearDragOffset();
     if (Math.abs(dx) > 50) {
-      switchTab(dx < 0 ? Math.min(2, activeTab + 1) : Math.max(0, activeTab - 1));
-    } else {
-      // Snap back with transition
-      panels.style.transition = '';
-      panels.style.transform = `translateX(${-activeTab * (100/3)}%)`;
+      switchTab(dx < 0 ? Math.min(1, activeTab + 1) : Math.max(0, activeTab - 1));
     }
   }, { passive: true });
 
   panels.addEventListener('touchcancel', () => {
-    if (!isSwiping) return;
-    isSwiping = false;
-    panels.style.transition = '';
-    panels.style.transform = `translateX(${-activeTab * (100/3)}%)`;
+    swipeTracking = false;
+    swipeDecided  = false;
+    clearDragOffset();
   }, { passive: true });
 
   S._switchTab = switchTab;
   S._getEditMode = () => editMode;
   S._getActiveTab = () => activeTab;
+
+  // Re-snap on resize/orientation change
 }
 
 function renderAll() {
@@ -3779,6 +5530,7 @@ async function boot() {
   // Restore log template + output folder (saved to IDB, auto-reconnect if permission still held)
   await restoreLogTemplateHandle();
   await restoreLogOutputHandle();
+  await restoreEventsHandle();
 
   if (Notification.permission==='default')
     setTimeout(()=>Notification.requestPermission().then(p=>{ S.notifPermission=p; showBatteryBanner(); }), 2000);
