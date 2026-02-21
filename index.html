@@ -109,7 +109,7 @@
   .sched-preview{padding:10px 16px 12px;font-size:13px;font-family:var(--font-mono);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
 
   /* modal */
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease}
   .modal-overlay.center{align-items:center}
   .modal{background:var(--bg2);border:1px solid var(--border);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));animation:slideUp .3s cubic-bezier(.34,1.56,.64,1);max-height:92dvh;overflow-y:auto}
   .modal.cm-modal{border-radius:20px;animation:scaleIn .25s cubic-bezier(.34,1.56,.64,1);margin:16px}
@@ -4147,7 +4147,7 @@ function showLogsPopup() {
   const ov = document.createElement('div');
   ov.id = 'logs-popup-ov';
   ov.className = 'modal-overlay';
-  ov.style.cssText = 'align-items:flex-end;z-index:300';
+  ov.style.cssText = 'align-items:flex-end;z-index:200';
   ov.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px 20px 0 0;width:100%;max-width:480px;height:88dvh;display:flex;flex-direction:column;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1);overflow:hidden">
     <div style="padding:14px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
       <span style="font-size:14px;font-weight:800;letter-spacing:-.3px">Archive</span>
@@ -4415,18 +4415,39 @@ function _renderLogNode(node, log) {
     ${tags ? `<div class="log-item-tags">${tags}</div>` : ''}`;
 }
 
+async function _getLogParentDir(log) {
+  // Navigate from the root dir handle to the parent folder of this log file
+  const parts = log.path.split('/');
+  parts.pop(); // remove filename
+  let dir = S.logOutputDirHandle;
+  for (const seg of parts) {
+    if (seg) dir = await dir.getDirectoryHandle(seg, { create: false });
+  }
+  return dir;
+}
+
+async function _ensureWritePermission(dirHandle) {
+  const perm = await dirHandle.queryPermission({ mode: 'readwrite' });
+  if (perm === 'granted') return true;
+  const req = await dirHandle.requestPermission({ mode: 'readwrite' });
+  return req === 'granted';
+}
+
 async function _openLogDetail(log) {
-  if (!log.loaded) await _loadLogPreview(log);
-  // Strip YAML frontmatter — show only body after closing ---
-  const raw = log._fullText || log.preview || '';
-  const bodyOnly = raw.replace(/^---[\s\S]*?---\s*/m, '').trim() || raw.trim();
+  // Always reload from disk to get latest content
+  log.loaded = false;
+  await _loadLogPreview(log);
+
+  const raw = log._fullText || '';
+  const bodyOnly = raw.replace(/^---[\s\S]*?---\r?\n?/m, '').trim();
+  const displayBody = bodyOnly || log.preview || log.filename;
 
   const ov = document.createElement('div'); ov.className = 'modal-overlay';
   ov.innerHTML = `<div class="modal" style="max-height:88dvh;overflow-y:auto">
     <div class="modal-handle"></div>
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-bottom:4px">${log.dateLabel || log.filename}</div>
     ${log.tags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${log.tags.map(t=>`<span class="log-item-tag">#${t}</span>`).join('')}</div>` : ''}
-    <div class="log-detail-body" id="ld-body">${bodyOnly.replace(/</g,'&lt;')}</div>
+    <div class="log-detail-body" id="ld-body" style="white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;margin-bottom:16px">${displayBody.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btn-ghost" style="flex:1;font-size:13px" id="ld-edit">✎ Edit</button>
       <button class="btn btn-ghost" style="flex:1;font-size:13px;color:var(--danger);border-color:rgba(255,68,102,.3)" id="ld-delete">✕ Delete</button>
@@ -4434,7 +4455,7 @@ async function _openLogDetail(log) {
     </div>
   </div>`;
   document.body.appendChild(ov);
-  const close = () => document.body.removeChild(ov);
+  const close = () => { if (ov.parentNode) document.body.removeChild(ov); };
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
   ov.querySelector('#ld-close').addEventListener('click', close);
 
@@ -4446,25 +4467,22 @@ async function _openLogDetail(log) {
 
   // ── Delete ──
   ov.querySelector('#ld-delete').addEventListener('click', async () => {
-    if (!confirm(`Delete "${log.filename}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete "${log.filename}"?\nThis cannot be undone.`)) return;
+    const delBtn = ov.querySelector('#ld-delete');
+    delBtn.disabled = true; delBtn.textContent = 'Deleting…';
     try {
-      // Get parent dir handle
-      const parts = log.path.split('/');
-      parts.pop(); // remove filename
-      let dir = S.logOutputDirHandle;
-      for (const seg of parts) {
-        if (seg) dir = await dir.getDirectoryHandle(seg, { create: false });
-      }
-      const perm = await dir.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') { showToast('Permission denied'); return; }
+      const dir = await _getLogParentDir(log);
+      const ok = await _ensureWritePermission(dir);
+      if (!ok) { showToast('Permission denied'); delBtn.disabled = false; delBtn.textContent = '✕ Delete'; return; }
       await dir.removeEntry(log.filename);
-      // Remove from in-memory arrays
       _allLogs = _allLogs.filter(l => l.path !== log.path);
       _logsApplyFilter();
       showToast('🗑 Log deleted');
       close();
     } catch(e) {
+      console.error('Delete failed', e);
       showToast('Delete failed: ' + e.message);
+      delBtn.disabled = false; delBtn.textContent = '✕ Delete';
     }
   });
 }
@@ -4534,47 +4552,44 @@ function _openLogEditor(log) {
     btn.disabled = true; btn.textContent = 'Saving…';
 
     try {
-      // ── Parse new log + tags from user input ──
+      // ── Parse new log text + tags from user input ──
       const { tags: newTags, cleaned: newLogText } = extractTagsFromText(inputText);
       const sanitizedLog = sanitizeForYAML(newLogText);
-
-      // ── Patch the YAML in the full file ──
-      const yamlLines = (() => {
-        const fm = rawText.match(/^(---\n)([\s\S]+?)(\n---)/);
-        return fm ? fm[2].split('\n') : [];
-      })();
-
-      // Update log field
-      const li = yamlLines.findIndex(l => l.startsWith('log:'));
-      if (li !== -1) yamlLines[li] = `log: ${sanitizedLog}`;
-      else yamlLines.push(`log: ${sanitizedLog}`);
-
-      // Replace tags block
-      const ti = yamlLines.findIndex(l => l.trim() === 'tags:');
-      if (ti !== -1) {
-        let end = ti + 1;
-        while (end < yamlLines.length && yamlLines[end].trim().startsWith('- ')) end++;
-        yamlLines.splice(ti, end - ti);
-      }
       const finalTags = newTags.length ? newTags : ['explore'];
-      const logIdx2 = yamlLines.findIndex(l => l.startsWith('log:'));
-      yamlLines.splice(logIdx2 !== -1 ? logIdx2 : yamlLines.length, 0, 'tags:', ...finalTags.map(t => `  - ${t}`));
 
-      // Rebuild full file text preserving everything outside frontmatter
-      const fmFull = rawText.match(/^(---\n)([\s\S]+?)(\n---)([\s\S]*)$/);
-      const newFullText = fmFull
-        ? fmFull[1] + yamlLines.join('\n') + fmFull[3] + fmFull[4]
-        : rawText; // fallback: don't corrupt if no frontmatter
+      // ── Rebuild YAML frontmatter cleanly ──
+      // Normalise line endings first
+      const normRaw = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const fmMatch = normRaw.match(/^---\n([\s\S]*?)\n---/);
+      let newFullText;
+      if (fmMatch) {
+        // Parse existing YAML lines, drop old log/tags, reinsert
+        let yamlLines = fmMatch[1].split('\n');
+        // Remove old log: line
+        yamlLines = yamlLines.filter(l => !l.startsWith('log:'));
+        // Remove old tags block
+        const ti = yamlLines.findIndex(l => /^tags:\s*$/.test(l));
+        if (ti !== -1) {
+          let end = ti + 1;
+          while (end < yamlLines.length && /^\s+-\s/.test(yamlLines[end])) end++;
+          yamlLines.splice(ti, end - ti);
+        }
+        // Append updated log + tags
+        yamlLines.push(`log: ${sanitizedLog}`);
+        yamlLines.push('tags:');
+        finalTags.forEach(t => yamlLines.push(`  - ${t}`));
+
+        const bodyAfterFm = normRaw.slice(fmMatch[0].length); // everything after closing ---
+        newFullText = '---\n' + yamlLines.join('\n') + '\n---' + bodyAfterFm;
+      } else {
+        // No frontmatter — prepend one
+        newFullText = `---\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n${normRaw}`;
+      }
 
       // ── Write to disk ──
-      const parts = log.path.split('/');
-      parts.pop();
-      let dir = S.logOutputDirHandle;
-      for (const seg of parts) {
-        if (seg) dir = await dir.getDirectoryHandle(seg, { create: false });
-      }
-      const perm = await dir.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
+      const dir = await _getLogParentDir(log);
+      const ok = await _ensureWritePermission(dir);
+      if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
       const fh = await dir.getFileHandle(log.filename, { create: false });
       const w = await fh.createWritable();
       await w.write(newFullText);
@@ -4589,6 +4604,7 @@ function _openLogEditor(log) {
       showToast('✓ Log saved');
       close();
     } catch(e) {
+      console.error('Save failed', e);
       showToast('Save failed: ' + e.message);
       btn.disabled = false; btn.textContent = '✓ Save Changes';
     }
