@@ -66,26 +66,36 @@
   .snoozed-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:rgba(255,170,0,.12);border:1px solid rgba(255,170,0,.3);border-radius:20px;font-size:11px;font-family:var(--font-mono);color:var(--warn)}
 
   /* habits */
-  .habits-grid{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;padding:4px 4px 8px}
+  .habits-grid{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:4px 2px 8px}
   .habit-col{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px}
-  .habit-bar-track{width:32px;height:100px;background:var(--bg3);border-radius:8px;position:relative;overflow:hidden;border:1px solid var(--border)}
+  .habit-bar-track{width:26px;height:90px;background:var(--bg3);border-radius:8px;position:relative;overflow:hidden;border:1px solid var(--border)}
   .habit-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:6px;background:linear-gradient(to top,var(--accent),rgba(0,255,136,.4));transition:height .4s cubic-bezier(.34,1.56,.64,1)}
   .habit-bar-fill.complete{background:linear-gradient(to top,var(--accent),#00ffaa)}
-  .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1}
-  .habit-icon:active{transform:scale(1.35)}
-  .habit-val{font-size:10px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);padding:2px 6px;border-radius:10px}
+  .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1;width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2)}
+  .habit-icon:active{transform:scale(1.3)}
+  .habit-val{font-size:9px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);padding:1px 4px;border-radius:10px}
   .habit-val.complete{color:var(--accent)}
   /* habit edit mode */
   .habit-remove-btn{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;font-weight:700;border:2px solid var(--bg2);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35)}
   .habit-remove-btn:active{transform:scale(.88)}
   .habit-add-col{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px;cursor:pointer}
-  .habit-add-btn{width:38px;height:38px;border-radius:10px;background:rgba(0,255,136,.08);border:1.5px dashed rgba(0,255,136,.35);color:var(--accent);font-size:22px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+  .habit-add-btn{width:44px;height:44px;border-radius:12px;background:rgba(0,255,136,.08);border:1.5px dashed rgba(0,255,136,.35);color:var(--accent);font-size:22px;display:flex;align-items:center;justify-content:center;transition:all .15s}
   .habit-add-btn:active{background:rgba(0,255,136,.18);transform:scale(.92)}
   .habit-add-label{font-size:9px;font-family:var(--font-mono);color:var(--muted)}
   /* habit edit done pill — small, tucked into card header area */
   .habit-done-pill{display:none;align-items:center;gap:6px;padding:5px 12px;background:var(--accent);color:var(--bg);border:none;border-radius:20px;font-size:11px;font-family:var(--font-mono);font-weight:700;cursor:pointer;transition:all .15s;flex-shrink:0}
   .habit-done-pill:active{transform:scale(.93)}
   .habit-done-pill.visible{display:flex}
+
+  /* pomodoro */
+  .pomo-btn{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;padding:0}
+  @keyframes pomoActivePulse{0%,100%{box-shadow:0 0 0 3px rgba(0,255,136,.12),0 0 0 0 rgba(0,255,136,.0)}50%{box-shadow:0 0 0 3px rgba(0,255,136,.25),0 0 8px 2px rgba(0,255,136,.18)}}
+  .pomo-btn.active{border-color:var(--accent);background:rgba(0,255,136,.15);animation:pomoActivePulse 2.4s ease-in-out infinite}
+  .pomo-btn .pomo-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .2s}
+  .pomo-btn.active .pomo-dot{background:var(--accent)}
+  .pomo-ring{position:relative;width:60px;height:60px;flex-shrink:0}
+  .pomo-ring svg{position:absolute;inset:0;transform:rotate(-90deg)}
+  .pomo-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-mono);font-weight:700;color:var(--accent)}
 
   /* schedule */
   .sched-list{display:flex;flex-direction:column;gap:2px}
@@ -323,8 +333,10 @@ const S = {
   logTemplateHandle: null,
   logOutputDirHandle: null,
   _pendingHandle: null,
-  scheduleOpen: false, // legacy, unused
+  scheduleOpen: false,
   notifPermission: Notification.permission,
+  // Per-session permission cache — requestPermission only called once per handle
+  _permGranted: { logTemplate: false, logOutput: false },
 };
 
 const LS = {
@@ -858,7 +870,341 @@ function tickCountdown() {
   if (prog) { const {cur}=getCurNext(); if(cur!==-1){ const sp=schedDate(S.config.schedule[next].time)-schedDate(S.config.schedule[cur].time); prog.style.width=Math.max(0,Math.min(100,100-(rem/sp*100)))+'%'; }}
 }
 
-// ── RENDER — HABIT BARS ────────────────────────────────────────────────────
+// ── POMODORO ENGINE ────────────────────────────────────────────────────────
+const POMO = {
+  active: false,
+  loop: false,
+  phase: 'work',      // 'work' | 'break'
+  workMins: 25,
+  breakMins: 5,
+  endTime: null,
+  _interval: null,
+};
+
+function pomoGetSettings() {
+  const s = LS.get('pomoSettings');
+  return s || { workMins: 25, breakMins: 5, focusMaxMins: 60, breakMaxMins: 15 };
+}
+
+function pomoStart(phase) {
+  const cfg = pomoGetSettings();
+  POMO.workMins = cfg.workMins;
+  POMO.breakMins = cfg.breakMins;
+  POMO.phase = phase || 'work';
+  POMO.active = true;
+  const dur = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
+  POMO.endTime = Date.now() + dur;
+  clearInterval(POMO._interval);
+  POMO._interval = setInterval(pomoTick, 500);
+  pomoUpdateBtn();
+
+  // Schedule SW notification
+  if (S.notifPermission === 'granted' && navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SCHEDULE_ALARM',
+      title: POMO.phase === 'work' ? '🍅 Pomodoro done! Time for a break.' : '⏰ Break over! Back to work.',
+      body: POMO.loop ? 'Tap Stop to end, or Dismiss to continue' : 'Tap Loop to continue or Dismiss',
+      tag: 'pomo-alarm',
+      delay: dur,
+      actions: POMO.loop
+        ? [{ action: 'pomo-stop', title: 'Stop' }, { action: 'dismiss', title: 'Dismiss' }]
+        : [{ action: 'pomo-loop', title: '🔁 Loop' }, { action: 'dismiss', title: 'Dismiss' }]
+    });
+  }
+}
+
+function pomoStop() {
+  POMO.active = false;
+  POMO.endTime = null;
+  clearInterval(POMO._interval);
+  POMO._interval = null;
+  pomoUpdateBtn();
+}
+
+function pomoTick() {
+  if (!POMO.active || !POMO.endTime) return;
+  const rem = POMO.endTime - Date.now();
+  if (rem <= 0) {
+    // Phase ended
+    if (POMO.loop) {
+      // Auto-advance to next phase
+      pomoStart(POMO.phase === 'work' ? 'break' : 'work');
+    } else {
+      pomoStop();
+    }
+    return;
+  }
+  // Update ring in dashboard if visible
+  const ring = document.getElementById('pomo-ring-label');
+  const arc  = document.getElementById('pomo-arc');
+  if (ring) {
+    ring.textContent = fmtMs(rem);
+    const total = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
+    const pct = 1 - rem / total;
+    if (arc) {
+      const r = 26, circ = 2 * Math.PI * r;
+      arc.setAttribute('stroke-dashoffset', circ * (1 - pct));
+    }
+  }
+  pomoUpdateBtn();
+}
+
+function pomoUpdateBtn() {
+  const btn = document.getElementById('pomo-btn');
+  if (!btn) return;
+  btn.classList.toggle('active', POMO.active);
+  // If timer is running, show ring; else show dot
+  if (POMO.active && POMO.endTime) {
+    const rem = POMO.endTime - Date.now();
+    const total = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
+    const pct = 1 - rem / total;
+    const r = 8, circ = 2 * Math.PI * r;
+    btn.innerHTML = `<svg width="22" height="22" viewBox="0 0 22 22">
+      <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--border)" stroke-width="2.5"/>
+      <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
+        stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-pct)}" transform="rotate(-90 11 11)"
+        style="transition:stroke-dashoffset .5s linear"/>
+    </svg>`;
+  } else {
+    btn.innerHTML = `<div class="pomo-dot"></div>`;
+  }
+}
+
+function showPomoPopup() {
+  const existing = document.getElementById('pomo-popup');
+  if (existing) { existing.remove(); return; }
+
+  const cfg = pomoGetSettings();
+  const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.id = 'pomo-popup';
+
+  const R = 54, circ = 2 * Math.PI * R;
+  const focusMax = Math.max(1, cfg.focusMaxMins || 60);
+  const breakMax = Math.max(1, cfg.breakMaxMins || 15);
+  const focusMinsArr = Array.from({length: focusMax}, (_,i) => String(i+1).padStart(2,'0'));
+  const breakMinsArr = Array.from({length: breakMax}, (_,i) => String(i+1).padStart(2,'0'));
+
+  function fmtMmSs(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+  }
+
+  function currentPhaseColor() { return POMO.phase === 'work' ? 'var(--accent)' : 'var(--warn)'; }
+
+  ov.innerHTML = `<div class="modal" style="max-width:300px">
+    <div class="modal-handle"></div>
+    <div style="text-align:center;font-size:16px;font-weight:800;margin-bottom:16px">▶ Focus</div>
+
+    <!-- Ring -->
+    <div style="display:flex;justify-content:center;margin-bottom:20px">
+      <div style="position:relative;width:140px;height:140px;flex-shrink:0">
+        <svg width="140" height="140" viewBox="0 0 140 140" style="position:absolute;inset:0;transform:rotate(-90deg)">
+          <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--border)" stroke-width="6"/>
+          <circle id="pomo-popup-arc" cx="70" cy="70" r="${R}" fill="none"
+            stroke="var(--accent)" stroke-width="6"
+            stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+            stroke-linecap="round" style="transition:stroke-dashoffset .5s linear"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+          <span id="pomo-popup-time" style="font-size:28px;font-family:var(--font-mono);font-weight:800;color:var(--accent);line-height:1;letter-spacing:-1px">--:--</span>
+          <span id="pomo-popup-phase" style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1.5px">min : sec</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drums — always interactive -->
+    <div id="pomo-drums-wrap" style="margin-bottom:16px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;width:52px;flex-shrink:0">Focus</div>
+        <div id="pomo-focus-drum" style="flex:1;min-width:0"></div>
+        <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0">min</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;width:52px;flex-shrink:0">Break</div>
+        <div id="pomo-break-drum" style="flex:1;min-width:0"></div>
+        <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0">min</div>
+      </div>
+    </div>
+
+    <!-- Loop toggle -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
+      <span style="font-size:13px">🔁</span>
+      <span style="font-size:12px;font-family:var(--font-mono);color:var(--muted);flex:1">Loop</span>
+      <div id="pomo-loop-track" style="width:44px;height:24px;border-radius:12px;cursor:pointer;transition:background .2s;position:relative;background:${POMO.loop?'var(--accent)':'rgba(255,255,255,.1)'}">
+        <div id="pomo-loop-knob" style="width:20px;height:20px;border-radius:50%;background:white;position:absolute;top:2px;transition:left .2s;left:${POMO.loop?'22px':'2px'}"></div>
+      </div>
+    </div>
+
+    <!-- Button — toggles between Start and Stop in place -->
+    <button id="pomo-main-btn" class="btn btn-green" style="width:100%">▶ Start</button>
+  </div>`;
+  document.body.appendChild(ov);
+
+  const arcEl    = ov.querySelector('#pomo-popup-arc');
+  const timeEl   = ov.querySelector('#pomo-popup-time');
+  const phaseEl  = ov.querySelector('#pomo-popup-phase');
+  const mainBtn  = ov.querySelector('#pomo-main-btn');
+  const drumsWrap = ov.querySelector('#pomo-drums-wrap');
+
+  // ── Build drums ──
+  const focusInitIdx = Math.min(cfg.workMins, focusMax) - 1;
+  const breakInitIdx = Math.min(cfg.breakMins, breakMax) - 1;
+  const focusDrum = buildTimeDrum_simple(ov.querySelector('#pomo-focus-drum'), focusMinsArr, focusInitIdx);
+  const breakDrum = buildTimeDrum_simple(ov.querySelector('#pomo-break-drum'), breakMinsArr, breakInitIdx);
+
+  // ── Loop toggle ──
+  const track = ov.querySelector('#pomo-loop-track');
+  const knob  = ov.querySelector('#pomo-loop-knob');
+  track.addEventListener('click', () => {
+    POMO.loop = !POMO.loop;
+    track.style.background = POMO.loop ? 'var(--accent)' : 'rgba(255,255,255,.1)';
+    knob.style.left = POMO.loop ? '22px' : '2px';
+  });
+
+  // ── Update ring / time display ──
+  function updateDisplay() {
+    if (!POMO.active || !POMO.endTime) {
+      // Idle: show selected drum value as countdown preview
+      const w = focusDrum ? parseInt(focusDrum.getSelected()) : cfg.workMins;
+      timeEl.textContent = String(w).padStart(2,'0') + ':00';
+      timeEl.style.color = 'var(--accent)';
+      phaseEl.textContent = 'min : sec';
+      arcEl.setAttribute('stroke-dashoffset', String(circ));
+      arcEl.setAttribute('stroke', 'var(--accent)');
+      drumsWrap.style.opacity = '';
+      drumsWrap.style.pointerEvents = '';
+      mainBtn.textContent = '▶ Start';
+      mainBtn.className = 'btn btn-green';
+      mainBtn.style.width = '100%';
+      mainBtn.style.color = '';
+      return;
+    }
+    const rem = Math.max(0, POMO.endTime - Date.now());
+    const total = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
+    const pct = 1 - rem / total;
+    const col = POMO.phase === 'work' ? 'var(--accent)' : 'var(--warn)';
+    arcEl.setAttribute('stroke-dashoffset', String(circ * (1 - pct)));
+    arcEl.setAttribute('stroke', col);
+    timeEl.textContent = fmtMmSs(rem);
+    timeEl.style.color = col;
+    phaseEl.textContent = POMO.phase === 'work' ? 'Focus' : 'Break';
+    drumsWrap.style.opacity = '.38';
+    drumsWrap.style.pointerEvents = 'none';
+    mainBtn.textContent = '■ Stop';
+    mainBtn.className = 'btn btn-ghost';
+    mainBtn.style.width = '100%';
+    mainBtn.style.color = 'var(--danger)';
+  }
+
+  // ── Start/Stop toggle (in place, no close/reopen) ──
+  mainBtn.addEventListener('click', () => {
+    if (POMO.active) {
+      pomoStop();
+      updateDisplay();
+    } else {
+      const w = focusDrum ? parseInt(focusDrum.getSelected()) : cfg.workMins;
+      const b = breakDrum ? parseInt(breakDrum.getSelected()) : cfg.breakMins;
+      const s = pomoGetSettings();
+      LS.set('pomoSettings', { ...s, workMins: w, breakMins: b });
+      pomoStart('work');
+      updateDisplay();
+    }
+  });
+
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+  // Initial render
+  updateDisplay();
+
+  // ── Live tick while popup is open ──
+  const liveInterval = setInterval(() => {
+    if (!document.body.contains(ov)) { clearInterval(liveInterval); return; }
+    updateDisplay();
+  }, 500);
+}
+
+// Minimal drum builder for pomodoro (no AM/PM, just a list of string values)
+function buildTimeDrum_simple(container, items, initIdx) {
+  if (!container) return null;
+  const ITEM_H = 40, DRUM_H = 120, PAD = 1;
+  const renderItems = [...items, ...items, ...items];
+  const offset = items.length;
+
+  // Build a drum div INSIDE the container rather than styling the container itself
+  // This preserves any flex/width CSS already on the container element
+  const drum = document.createElement('div');
+  drum.style.cssText = 'position:relative;height:' + DRUM_H + 'px;overflow:hidden;border-radius:10px;background:var(--bg3);border:1px solid var(--border);cursor:grab;width:100%;touch-action:none';
+  container.appendChild(drum);
+
+  const highlight = document.createElement('div');
+  highlight.style.cssText = `position:absolute;left:0;right:0;top:${(DRUM_H-ITEM_H)/2}px;height:${ITEM_H}px;background:rgba(0,255,136,.08);border-top:1px solid rgba(0,255,136,.2);border-bottom:1px solid rgba(0,255,136,.2);pointer-events:none;z-index:1`;
+  drum.appendChild(highlight);
+
+  const inner = document.createElement('div');
+  inner.style.cssText = 'position:absolute;left:0;right:0;will-change:transform';
+
+  for (let p = 0; p < PAD; p++) {
+    const pad = document.createElement('div');
+    pad.style.cssText = `height:${ITEM_H}px`;
+    inner.appendChild(pad);
+  }
+  renderItems.forEach(val => {
+    const el = document.createElement('div');
+    el.style.cssText = `height:${ITEM_H}px;display:flex;align-items:center;justify-content:center;font-size:18px;font-family:var(--font-mono);font-weight:700;color:var(--muted);transition:color .1s,font-size .1s`;
+    el.textContent = val;
+    inner.appendChild(el);
+  });
+  for (let p = 0; p < PAD; p++) {
+    const pad = document.createElement('div');
+    pad.style.cssText = `height:${ITEM_H}px`;
+    inner.appendChild(pad);
+  }
+  drum.appendChild(inner);
+
+  let selected = Math.max(0, Math.min(items.length - 1, initIdx));
+  let startY = 0, isDragging = false;
+
+  function getRenderIdx() { return offset + selected; }
+  function getY() { return -(getRenderIdx() * ITEM_H) + (DRUM_H - ITEM_H) / 2; }
+
+  function render(animate) {
+    inner.style.transition = animate ? 'transform .18s cubic-bezier(.25,.8,.25,1)' : 'none';
+    inner.style.transform = `translateY(${getY()}px)`;
+    inner.querySelectorAll('div').forEach((el, i) => {
+      const isSelected = i === PAD + getRenderIdx();
+      el.style.color = isSelected ? 'var(--accent)' : 'var(--muted)';
+      el.style.fontSize = isSelected ? '20px' : '16px';
+    });
+  }
+
+  function moveTo(n) {
+    selected = ((n % items.length) + items.length) % items.length;
+    render(true);
+  }
+
+  drum.addEventListener('pointerdown', e => {
+    isDragging = true; startY = e.clientY;
+    inner.style.transition = 'none';
+    drum.setPointerCapture(e.pointerId);
+    e.stopPropagation(); // prevent overlay dismiss
+  });
+  drum.addEventListener('pointermove', e => {
+    if (!isDragging) return;
+    inner.style.transform = `translateY(${getY() + (e.clientY - startY)}px)`;
+    e.stopPropagation();
+  });
+  drum.addEventListener('pointerup', e => {
+    if (!isDragging) return;
+    isDragging = false;
+    moveTo(selected - Math.round((e.clientY - startY) / ITEM_H));
+    e.stopPropagation();
+  });
+  drum.addEventListener('wheel', e => {
+    e.preventDefault(); moveTo(selected + (e.deltaY > 0 ? 1 : -1));
+  }, { passive: false });
+
+  render(false);
+  return { getSelected: () => items[selected] };
+}
 function renderHabitBars() {
   const el = document.getElementById('card-habits'); if (!el) return;
   const body = el.querySelector('.card-body');
@@ -909,8 +1255,8 @@ function renderHabitBars() {
           <div style="font-size:30px;line-height:1;user-select:none;padding-bottom:4px">${cfg.icon}</div>
           <button class="habit-remove-btn-inline" data-key="${key}" style="position:absolute;top:-6px;right:-8px;width:18px;height:18px;border-radius:50%;background:var(--danger);border:none;color:#fff;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;padding:0">✕</button>
         </div>
-        <button class="habit-edit-icon" data-key="${key}" style="width:52px;padding:3px 0;background:rgba(0,255,136,.13);border:1.5px solid rgba(0,255,136,.35);border-radius:8px;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✎ edit</button>
-        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px">${key}</div>`;
+        <button class="habit-edit-icon" data-key="${key}" style="width:56px;padding:3px 0;background:rgba(0,255,136,.13);border:1.5px solid rgba(0,255,136,.35);border-radius:8px;color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px">✎ edit</button>
+        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-align:center;max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px">${key}</div>`;
     } else {
       col.innerHTML = `
         <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="height:${pct}%"></div></div>
@@ -942,7 +1288,7 @@ function renderHabitBars() {
   // Add "+" in edit mode
   if (editMode) {
     const ac = document.createElement('div'); ac.className = 'habit-add-col';
-    ac.innerHTML = `<div class="habit-add-btn" style="margin-top:6px">＋</div><div class="habit-add-label">add</div>`;
+    ac.innerHTML = `<div class="habit-add-btn" style="margin-top:6px;width:44px;height:44px">＋</div><div class="habit-add-label">add</div>`;
     ac.addEventListener('click', () => showAddHabitSheet());
     grid.appendChild(ac);
   }
@@ -1323,11 +1669,9 @@ function showManualModal(key) {
     <div style="font-size:48px;text-align:center;margin-bottom:8px">${cfg.icon}</div>
     <div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:16px">${key}</div>
     ${actions}
-    <div style="margin-top:16px"><button class="btn btn-ghost" style="width:100%" id="mh-close">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) document.body.removeChild(ov); });
-  ov.querySelector('#mh-close').addEventListener('click',()=>document.body.removeChild(ov));
   if (cfg.type==='incremental') {
     ov.querySelector('#mh-inc').addEventListener('click',()=>{ 
       const cur2 = S.habitData[key]||0;
@@ -1353,11 +1697,27 @@ function renderScheduleTab(editMode) {
   const sc = S.config?.schedule;
 
   if (!sc?.length && !editMode) {
+    const hasVault = !!S.vaultDirHandle;
     el.innerHTML = `<div class="schedule-empty">📭 No schedule loaded<br>
       <small style="font-size:11px;font-family:var(--font-mono);opacity:.7">
-        Tap <b>⚙ Settings → Habit Tracker Folder</b> to connect your vault,<br>
-        or tap <b>✎ Edit</b> below to add entries manually
-      </small></div>`;
+        ${hasVault
+          ? 'No schedule found in vault — add entries below or check your .md config file.'
+          : 'Tap <b>⚙ Settings → Habit Tracker Folder</b> to connect your vault,<br>or add entries manually below'
+        }
+      </small></div>
+      ${hasVault ? `<div style="display:flex;gap:10px;padding:0 4px"><button class="btn btn-green" id="sched-empty-add" style="flex:1">＋ Add Entry</button><button class="btn btn-ghost" id="sched-empty-settings" style="flex:1">⚙ Settings</button></div>` : `<button class="btn btn-ghost" id="sched-empty-settings" style="width:100%;margin-top:8px">⚙ Open Settings</button>`}`;
+    el.querySelector('#sched-empty-add')?.addEventListener('click', () => {
+      if (S._enterSchedEdit) S._enterSchedEdit();
+      setTimeout(() => {
+        showAddScheduleSheet(() => { renderScheduleTab(true); });
+      }, 50);
+    });
+    el.querySelector('#sched-empty-settings')?.addEventListener('click', () => showSettings());
+    // Long-press on empty state to enter edit mode
+    let lp;
+    el.addEventListener('pointerdown', () => { lp = setTimeout(() => { if (S._enterSchedEdit) S._enterSchedEdit(); }, 600); });
+    el.addEventListener('pointerup', () => clearTimeout(lp));
+    el.addEventListener('pointercancel', () => clearTimeout(lp));
     return;
   }
 
@@ -1382,13 +1742,16 @@ function renderScheduleTab(editMode) {
           </div>
         </div>`;
       } else {
-        html += `<div class="sched-tab-item ${isCur ? 'current' : ''} ${isPast ? 'past' : ''}">
+        const hi = detectHabit(item.activity);
+        const habitDot = hi ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-left:auto;opacity:.7"></span>` : '';
+        html += `<div class="sched-tab-item ${isCur ? 'current' : ''} ${isPast ? 'past' : ''}" data-sched-idx="${i}">
           <div class="sched-tab-time-block">
             <span class="sched-tab-time">${item.time}</span>
             ${isCur ? `<span class="sched-current-label">Now</span>` : ''}
           </div>
           <div class="sched-tab-divider"></div>
           <span class="sched-tab-act">${item.activity}</span>
+          ${habitDot}
         </div>`;
       }
     });
@@ -1399,6 +1762,22 @@ function renderScheduleTab(editMode) {
 
   if (!editMode) {
     setTimeout(() => el.querySelector('.current')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
+    // Long-press any item → enter edit mode
+    el.querySelectorAll('.sched-tab-item').forEach((row, i) => {
+      let lp;
+      row.addEventListener('pointerdown', () => { lp = setTimeout(() => { if (S._enterSchedEdit) S._enterSchedEdit(); }, 500); });
+      row.addEventListener('pointerup',   () => clearTimeout(lp));
+      row.addEventListener('pointercancel', () => clearTimeout(lp));
+      row.addEventListener('pointermove', () => clearTimeout(lp));
+      // Tap → show habit popup if linked
+      row.addEventListener('click', () => {
+        const item = S.config.schedule[i];
+        if (!item) return;
+        const hi = detectHabit(item.activity);
+        if (!hi) return;
+        showManualModal(hi.key);
+      });
+    });
     return;
   }
 
@@ -1452,7 +1831,7 @@ function buildTimeDrum(containerId, initialTime) {
   const container = document.getElementById(containerId);
   if (!container) return null;
 
-  function makeDrum(items, initIdx, extraClass) {
+  function makeDrum(items, initIdx, extraClass, loop) {
     const col = document.createElement('div');
     col.className = 'time-drum-col';
     const drum = document.createElement('div');
@@ -1467,52 +1846,51 @@ function buildTimeDrum(containerId, initialTime) {
 
     const ITEM_H = 44;
     const DRUM_H = 140;
-    const VISIBLE = Math.floor(DRUM_H / ITEM_H); // 3 visible items
-    const PAD = Math.floor(VISIBLE / 2);          // 1 padding each side
+    const VISIBLE = Math.floor(DRUM_H / ITEM_H);
+    const PAD = Math.floor(VISIBLE / 2);
 
-    // Padding top
+    // For looping drums, render 3x the items so drag feels infinite
+    const renderItems = loop ? [...items, ...items, ...items] : items;
+    const offset = loop ? items.length : 0; // center copy starts here
+
     for (let p = 0; p < PAD; p++) {
-      const pad = document.createElement('div');
-      pad.className = 'time-drum-item';
-      inner.appendChild(pad);
+      const pad = document.createElement('div'); pad.className = 'time-drum-item'; inner.appendChild(pad);
     }
-    // Real items
-    items.forEach((val, i) => {
+    renderItems.forEach(val => {
       const item = document.createElement('div');
       item.className = 'time-drum-item';
       item.textContent = val;
       inner.appendChild(item);
     });
-    // Padding bottom
     for (let p = 0; p < PAD; p++) {
-      const pad = document.createElement('div');
-      pad.className = 'time-drum-item';
-      inner.appendChild(pad);
+      const pad = document.createElement('div'); pad.className = 'time-drum-item'; inner.appendChild(pad);
     }
 
     let selected = Math.max(0, Math.min(items.length - 1, initIdx));
     let startY = 0, isDragging = false;
 
-    // selected=0 → inner starts at 0 (first real item centered)
-    function getTranslateY() { return -selected * ITEM_H; }
+    function getRenderIdx() { return loop ? offset + selected : selected; }
+    function getTranslateY() { return -getRenderIdx() * ITEM_H; }
 
     function render(animate) {
       inner.style.transition = animate ? 'transform .2s cubic-bezier(.25,.8,.25,1)' : 'none';
       inner.style.transform = `translateY(${getTranslateY()}px)`;
-      // items in inner: PAD pads, then real items at indices PAD..PAD+items.length-1
       inner.querySelectorAll('.time-drum-item').forEach((el, i) => {
-        el.classList.toggle('selected', i === PAD + selected);
+        el.classList.toggle('selected', i === PAD + getRenderIdx());
       });
     }
 
     function moveTo(n) {
-      selected = Math.max(0, Math.min(items.length - 1, n));
+      if (loop) {
+        selected = ((n % items.length) + items.length) % items.length;
+      } else {
+        selected = Math.max(0, Math.min(items.length - 1, n));
+      }
       render(true);
     }
 
     drum.addEventListener('pointerdown', e => {
-      isDragging = true;
-      startY = e.clientY;
+      isDragging = true; startY = e.clientY;
       inner.style.transition = 'none';
       drum.setPointerCapture(e.pointerId);
     });
@@ -1534,9 +1912,9 @@ function buildTimeDrum(containerId, initialTime) {
     return { drum: col, getSelected: () => items[selected] };
   }
 
-  const hDrum  = makeDrum(hours,   initH,  '');
-  const mDrum  = makeDrum(minutes, initM,  '');
-  const apDrum = makeDrum(ampm,    initAP, 'ampm-drum');
+  const hDrum  = makeDrum(hours,   initH,  '', true);
+  const mDrum  = makeDrum(minutes, initM,  '', true);
+  const apDrum = makeDrum(ampm,    initAP, 'ampm-drum', false);
 
   const colon = document.createElement('div');
   colon.className = 'time-colon';
@@ -1898,9 +2276,11 @@ async function writeLogEntry(logText) {
 
   let templateText;
   try {
-    // Request permission if needed (requires user gesture — we're inside click handler)
-    const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
-    if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
+    if (!S._permGranted.logTemplate) {
+      const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
+      if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
+      S._permGranted.logTemplate = true;
+    }
     const file = await S.logTemplateHandle.getFile();
     templateText = await file.text();
   } catch(e) {
@@ -1956,8 +2336,11 @@ async function writeLogEntry(logText) {
     return false;
   }
   try {
-    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
+    if (!S._permGranted.logOutput) {
+      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
+      S._permGranted.logOutput = true;
+    }
 
     // ── Flexible output path from user format setting ──
     // Default: {{date:YYYY}}/{{date:YYYYMMDDHHmmss}}
@@ -2015,17 +2398,13 @@ function showLogTextPopup() {
       <div class="modal-handle"></div>
       <div style="font-size:16px;font-weight:800;margin-bottom:10px">Setup Required</div>
       <div style="font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-bottom:20px;line-height:1.6">
-        ${missing} not set.<br><br>Go to ⚙ Settings → Daily Log<br>to set your template file and output folder.
+        ${missing} not set.<br><br>Go to Settings → Daily Log<br>to set your template file and output folder.
       </div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost" id="ltp-cancel" style="flex:1">Cancel</button>
-        <button class="btn btn-green" id="ltp-goto" style="flex:2">Open Settings</button>
-      </div>
+      <button class="btn btn-green" id="ltp-goto" style="width:100%">⚙ Open Settings</button>
     </div>`;
     document.body.appendChild(ov);
     const close = () => document.body.removeChild(ov);
     ov.addEventListener('click', e => { if (e.target === ov) close(); });
-    ov.querySelector('#ltp-cancel').addEventListener('click', close);
     ov.querySelector('#ltp-goto').addEventListener('click', () => { close(); showSettings(); });
     return;
   }
@@ -2098,6 +2477,8 @@ let _logsSpacerEl = null;
 let _logsRenderedRange = { start: 0, end: 0 };
 let _logsNodes = {};    // index → DOM node (pooled)
 
+let _logsDateFilter = 'today'; // 'today' | 'month' | 'year' | 'all'
+
 async function renderLogsTab() {
   const tab = document.getElementById('logs-tab');
   if (!tab) return;
@@ -2105,11 +2486,16 @@ async function renderLogsTab() {
   // Build the scaffold once
   if (!_logsTabMounted) {
     _logsTabMounted = true;
-    tab.style.cssText = 'display:flex;flex-direction:column;gap:0;padding:12px 16px 80px;min-height:0';
+    tab.style.cssText = 'display:flex;flex-direction:column;gap:0;padding:12px 16px 80px;min-height:0;overflow:hidden';
     tab.innerHTML = `
       <div class="logs-toolbar">
         <input class="logs-search" id="logs-search" type="search" placeholder="Search logs…" autocomplete="off"/>
-        <button class="icon-btn" id="logs-refresh" title="Reload logs">↺</button>
+        <select id="logs-date-filter" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;cursor:pointer;flex-shrink:0">
+          <option value="today">Today</option>
+          <option value="month">This Month</option>
+          <option value="year">This Year</option>
+          <option value="all">All Time</option>
+        </select>
       </div>
       <div class="logs-container" id="logs-container">
         <div class="logs-viewport" id="logs-viewport">
@@ -2121,7 +2507,6 @@ async function renderLogsTab() {
     _logsViewport = tab.querySelector('#logs-viewport');
     _logsSpacerEl = tab.querySelector('#logs-spacer');
 
-    // Make the container fill the remaining height
     tab.querySelector('#logs-container').style.flex = '1';
     tab.querySelector('#logs-container').style.minHeight = '0';
 
@@ -2131,7 +2516,10 @@ async function renderLogsTab() {
       _logsSearchQ = e.target.value.trim().toLowerCase();
       _logsApplyFilter();
     });
-    tab.querySelector('#logs-refresh').addEventListener('click', () => loadAllLogs());
+    tab.querySelector('#logs-date-filter').addEventListener('change', e => {
+      _logsDateFilter = e.target.value;
+      if (S.logOutputDirHandle) _logsApplyFilter();
+    });
   }
 
   if (!_logsLoading && _allLogs.length === 0) {
@@ -2147,21 +2535,19 @@ async function loadAllLogs() {
   _setLogsStatus('Loading…');
 
   if (!S.logOutputDirHandle) {
-    _logsSetEmpty('No log output folder set.<br>Go to ⚙ Settings → Daily Log → Set Log Output Folder.');
+    _logsSetEmpty('No log output folder set.<br><small style="color:var(--muted);font-size:11px">Go to Settings → Daily Log → Set Log Output Folder</small><br><button onclick="showSettings()" style="margin-top:10px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:var(--font-mono);cursor:pointer">⚙ Open Settings</button>');
     _logsLoading = false; return;
   }
   try {
-    const perm = await S.logOutputDirHandle.queryPermission({ mode: 'read' });
-    if (perm !== 'granted') {
-      const p2 = await S.logOutputDirHandle.requestPermission({ mode: 'read' });
-      if (p2 !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
+    if (!S._permGranted.logOutput) {
+      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
+      S._permGranted.logOutput = true;
     }
   } catch { _logsSetEmpty('Permission error.'); _logsLoading = false; return; }
 
   const entries = [];
   await _scanLogDir(S.logOutputDirHandle, '', entries);
-
-  // Sort newest first
   entries.sort((a, b) => b.filename.localeCompare(a.filename));
   _allLogs = entries;
   _logsApplyFilter();
@@ -2184,35 +2570,48 @@ async function _scanLogDir(dirHandle, prefix, out) {
 }
 
 function _logsApplyFilter() {
-  if (!_logsSearchQ) {
-    _filteredLogs = _allLogs;
-  } else {
+  const now = new Date();
+  const todayStr2 = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const monthStr = now.toISOString().slice(0, 7).replace(/-/g, '');
+  const yearStr  = now.getFullYear().toString();
+
+  let base = _allLogs;
+
+  // Date filter
+  if (_logsDateFilter !== 'all') {
+    base = base.filter(l => {
+      const fn = l.filename;
+      if (_logsDateFilter === 'today') return fn.includes(todayStr2);
+      if (_logsDateFilter === 'month') return fn.includes(monthStr) || fn.startsWith(yearStr + '/' + now.toISOString().slice(5,7));
+      if (_logsDateFilter === 'year')  return fn.includes(yearStr) || l.path.startsWith(yearStr + '/');
+      return true;
+    });
+  }
+
+  // Search filter
+  if (_logsSearchQ) {
     const q = _logsSearchQ;
-    _filteredLogs = _allLogs.filter(l =>
+    base = base.filter(l =>
       l.path.toLowerCase().includes(q) ||
       (l.preview || '').toLowerCase().includes(q) ||
       l.tags.some(t => t.toLowerCase().includes(q))
     );
   }
+  _filteredLogs = base;
 
   // ── Purge all existing DOM nodes from the spacer to prevent ghosting ──
-  if (_logsSpacerEl) {
-    _logsSpacerEl.querySelectorAll('.log-item').forEach(n => n.remove());
-  }
+  if (_logsSpacerEl) _logsSpacerEl.querySelectorAll('.log-item').forEach(n => n.remove());
   _logsNodes = {};
   _logsRenderedRange = { start: 0, end: 0 };
 
   _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
   if (_filteredLogs.length === 0) {
-    _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : 'No log files found in output folder.');
+    _logsSetEmpty(_logsSearchQ ? 'No logs match your search.' : `No logs for ${_logsDateFilter === 'today' ? 'today' : _logsDateFilter === 'month' ? 'this month' : _logsDateFilter === 'year' ? 'this year' : 'selected period'}.`);
     return;
   }
-  // Remove empty state if present
   const emp = _logsViewport?.querySelector('.logs-empty');
   if (emp) emp.remove();
-  // Set spacer height for virtual scroll
   if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
-  // Reset scroll to top on refresh so render starts from index 0
   if (_logsViewport) _logsViewport.scrollTop = 0;
   _logsVirtualRender(true);
 }
@@ -2608,6 +3007,24 @@ function showSettings() {
     </div>
 
     <div class="s-section">
+      <div class="s-section-title">▶ Focus Timer</div>
+      <div class="s-row">
+        <div><div class="s-label">Focus selector range</div><div class="s-sub">Max minutes shown in the Focus drum</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" id="s-pomo-focus-max" min="1" max="120" value="${pomoGetSettings().focusMaxMins || 60}" style="width:56px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:14px;font-weight:700;text-align:center;outline:none"/>
+          <span style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">min</span>
+        </div>
+      </div>
+      <div class="s-row">
+        <div><div class="s-label">Break selector range</div><div class="s-sub">Max minutes shown in the Break drum</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" id="s-pomo-break-max" min="1" max="60" value="${pomoGetSettings().breakMaxMins || 15}" style="width:56px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:14px;font-weight:700;text-align:center;outline:none"/>
+          <span style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">min</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="s-section">
       <div class="s-section-title">Habit Tracker Folder</div>
       <div class="s-row">
         <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">📄 .md config in root · 📁 data/ for daily habit files</div></div>
@@ -2714,6 +3131,18 @@ function showSettings() {
       applyTheme(btn.dataset.theme);
     });
   });
+  // ── Focus timer range settings ──
+  const pomoFocusMaxIn = ov.querySelector('#s-pomo-focus-max');
+  const pomoBreakMaxIn = ov.querySelector('#s-pomo-break-max');
+  function savePomoDurations() {
+    const prev = pomoGetSettings();
+    const fm = Math.max(1, Math.min(120, parseInt(pomoFocusMaxIn.value) || 60));
+    const bm = Math.max(1, Math.min(60,  parseInt(pomoBreakMaxIn.value) || 15));
+    LS.set('pomoSettings', { ...prev, focusMaxMins: fm, breakMaxMins: bm });
+  }
+  pomoFocusMaxIn?.addEventListener('change', savePomoDurations);
+  pomoBreakMaxIn?.addEventListener('change', savePomoDurations);
+
   // Vault backup list
   ov.querySelector('#s-list-backups')?.addEventListener('click', async () => {
     close();
@@ -2971,7 +3400,10 @@ function showBatteryBanner() {
 function buildSkeleton() {
   document.getElementById('main-content').innerHTML=`
     <div class="card" id="card-countdown" style="animation-delay:0s">
-      <div class="card-header"><span class="card-label">Now</span></div>
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-label">Now</span>
+        <button class="pomo-btn" id="pomo-btn" title="Focus Timer"><div class="pomo-dot"></div></button>
+      </div>
       <div class="card-body"></div>
     </div>
     <div class="card" id="card-log" style="animation-delay:.05s">
@@ -3003,6 +3435,7 @@ function buildSkeleton() {
 
   // ── Log text button ──
   document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
+  document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
     renderHabitBars();
@@ -3021,12 +3454,12 @@ function buildSkeleton() {
   let editMode = false;
   let touchStartX = 0, touchStartY = 0, isSwiping = false;
 
-  // ── Done FAB (edit → save) ──
+  // ── Done FAB (visible only in edit mode) ──
   const fab = document.createElement('button');
   fab.className = 'edit-fab';
   fab.id = 'schedule-edit-fab';
-  fab.innerHTML = 'Edit';
-  fab.title = 'Edit schedule';
+  fab.innerHTML = 'Done';
+  fab.title = 'Save and exit edit';
   fab.style.display = 'none';
   document.body.appendChild(fab);
 
@@ -3047,50 +3480,50 @@ function buildSkeleton() {
     const after = JSON.stringify(S.config?.schedule || []);
     if (before !== after) {
       saveScheduleToVault();
-      forceSwUpdate(); // force SW re-sync with new alarm times
+      forceSwUpdate();
     }
     _scheduleSnapshot = null;
     if (showMsg) showToast('✓ Schedule saved');
   }
 
-  fab.addEventListener('click', () => {
-    if (editMode) {
-      commitEdits(true);
-      editMode = false;
-      fab.innerHTML = 'Edit'; fab.title = 'Edit schedule';
-      fab.classList.remove('editing');
-      addFab.classList.remove('visible');
-      renderScheduleTab(false);
-      renderCountdown();
-    } else {
-      _scheduleSnapshot = JSON.parse(JSON.stringify(S.config?.schedule || []));
-      editMode = true;
-      fab.innerHTML = 'Done'; fab.title = 'Save and exit edit';
-      fab.classList.add('editing');
-      addFab.classList.add('visible');
-      renderScheduleTab(true);
-    }
-  });
+  function enterEditMode() {
+    if (editMode) return;
+    _scheduleSnapshot = JSON.parse(JSON.stringify(S.config?.schedule || []));
+    editMode = true;
+    fab.classList.add('editing');
+    addFab.classList.add('visible');
+    fab.style.display = 'flex';
+    renderScheduleTab(true);
+    showToast('Edit mode — long-press to exit');
+  }
+
+  function exitEditMode() {
+    if (!editMode) return;
+    commitEdits(true);
+    editMode = false;
+    fab.classList.remove('editing');
+    addFab.classList.remove('visible');
+    fab.style.display = 'none';
+    renderScheduleTab(false);
+    renderCountdown();
+  }
+
+  // Done FAB → exit edit mode
+  fab.addEventListener('click', exitEditMode);
+
+  // Expose for empty-state long-press
+  S._enterSchedEdit = enterEditMode;
 
   function switchTab(idx) {
     if (idx === activeTab) return;
-    // Auto-close habit edit mode when switching to schedule tab
-    if (S._habitEditMode) {
-      S._habitEditMode = false;
-      renderHabitBars();
-    }
+    if (S._habitEditMode) { S._habitEditMode = false; renderHabitBars(); }
     // Auto-commit schedule edits when leaving schedule tab
-    if (activeTab === 1 && editMode) {
-      commitEdits(false);
-      editMode = false;
-      fab.innerHTML = 'Edit';
-      fab.classList.remove('editing');
-      addFab.classList.remove('visible');
-    }
+    if (activeTab === 1 && editMode) exitEditMode();
     activeTab = idx;
     panels.style.transform = `translateX(${-idx * (100/3)}%)`;
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
-    fab.style.display = idx === 1 ? 'flex' : 'none';
+    fab.style.display = (idx === 1 && editMode) ? 'flex' : 'none';
+    addFab.classList.toggle('visible', idx === 1 && editMode);
     if (idx === 1) renderScheduleTab(false);
     if (idx === 2) renderLogsTab();
   }
@@ -3108,14 +3541,39 @@ function buildSkeleton() {
   panels.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
-    if (!isSwiping && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12) isSwiping = true;
+    if (!isSwiping) {
+      if (Math.abs(dy) > Math.abs(dx) + 5) return; // clearly vertical — ignore
+      if (Math.abs(dx) > 8) isSwiping = true;
+      else return;
+    }
+    if (isSwiping) {
+      // Live drag using pure pixel offset to avoid mixed unit glitches
+      const containerW = panels.parentElement.clientWidth;
+      const baseX = -activeTab * containerW;
+      const clampedDx = Math.max(-containerW, Math.min(containerW, dx));
+      panels.style.transition = 'none';
+      panels.style.transform = `translateX(${baseX + clampedDx}px)`;
+    }
   }, { passive: true });
 
   panels.addEventListener('touchend', e => {
     if (!isSwiping) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    if (Math.abs(dx) > 60) switchTab(dx < 0 ? Math.min(2, activeTab + 1) : Math.max(0, activeTab - 1));
     isSwiping = false;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) {
+      switchTab(dx < 0 ? Math.min(2, activeTab + 1) : Math.max(0, activeTab - 1));
+    } else {
+      // Snap back with transition
+      panels.style.transition = '';
+      panels.style.transform = `translateX(${-activeTab * (100/3)}%)`;
+    }
+  }, { passive: true });
+
+  panels.addEventListener('touchcancel', () => {
+    if (!isSwiping) return;
+    isSwiping = false;
+    panels.style.transition = '';
+    panels.style.transform = `translateX(${-activeTab * (100/3)}%)`;
   }, { passive: true });
 
   S._switchTab = switchTab;
