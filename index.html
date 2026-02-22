@@ -397,49 +397,29 @@ const LS = {
 // ── IndexedDB — stores FileSystemDirectoryHandle (localStorage can't) ──────
 const IDB = (() => {
   let db = null;
-  // Always force-reopen if the cached connection is closed/invalidated.
-  // Browsers (especially Safari/iOS) kill the IDB connection when the page
-  // is backgrounded, causing "object is no longer usable" errors on reuse.
   const open = () => new Promise((res,rej) => {
-    // If we have a cached db, test whether it's still alive by checking its
-    // internal state. If it has been closed, IDBDatabase.objectStoreNames will
-    // throw or the connection is in error state — safest check is to just try
-    // and catch InvalidStateError below. Reset on any such error.
     if (db) {
-      try {
-        // A no-op probe: accessing objectStoreNames throws if db is closed
-        void db.objectStoreNames;
-        res(db); return;
-      } catch {
-        db = null; // stale — fall through to reopen
-      }
+      try { void db.objectStoreNames; res(db); return; } catch { db = null; }
     }
     const r = indexedDB.open('habit-tracker-v1', 1);
     r.onupgradeneeded = e => e.target.result.createObjectStore('kv');
     r.onsuccess = e => {
       db = e.target.result;
-      // Listen for unexpected close so next call reopens cleanly
       db.onclose = () => { db = null; };
       db.onerror = () => { db = null; };
       res(db);
     };
     r.onerror = () => rej(r.error);
   });
-
-  // Wrap each operation with a retry: if we hit InvalidStateError the first
-  // time (stale connection slipped through), reset and try once more.
   async function withRetry(fn) {
-    try {
-      return await fn(await open());
-    } catch(e) {
+    try { return await fn(await open()); }
+    catch(e) {
       if (e && (e.name === 'InvalidStateError' || e.name === 'TransactionInactiveError')) {
-        db = null; // force fresh connection
-        return await fn(await open());
+        db = null; return await fn(await open());
       }
       throw e;
     }
   }
-
   return {
     set: (k,v) => withRetry(d => new Promise((res,rej) => {
       const tx = d.transaction('kv','readwrite');
@@ -4614,10 +4594,27 @@ function _openLogEditor(log) {
       }
 
       // ── Write to disk ──
-      const dir = await _getLogParentDir(log);
-      const ok = await _ensureWritePermission(dir);
-      if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
-      const fh = await dir.getFileHandle(log.filename, { create: false });
+      // Use log.handle directly (the FileSystemFileHandle from the directory scan).
+      // Re-navigating via S.logOutputDirHandle → getDirectoryHandle → getFileHandle
+      // produces a *new* handle object that the browser treats as unverified, which
+      // causes "attempt was made on object that is not usable" on createWritable().
+      // The scanned handle already has the user's permission — use it directly.
+      let fh = log.handle;
+      if (!fh) {
+        // Fallback: re-navigate if handle is missing for some reason
+        const dir = await _getLogParentDir(log);
+        const ok = await _ensureWritePermission(dir);
+        if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
+        fh = await dir.getFileHandle(log.filename, { create: false });
+      } else {
+        // Verify/request write permission on the existing handle
+        let perm;
+        try { perm = await fh.queryPermission({ mode: 'readwrite' }); } catch { perm = 'prompt'; }
+        if (perm !== 'granted') {
+          try { perm = await fh.requestPermission({ mode: 'readwrite' }); } catch { perm = 'denied'; }
+        }
+        if (perm !== 'granted') { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
+      }
       const w = await fh.createWritable();
       await w.write(newFullText);
       await w.close();
@@ -4652,6 +4649,42 @@ function applyTheme(t) {
 setInterval(() => { if ((LS.get('theme') || 'auto') === 'auto') applyTheme('auto'); }, 60000);
 
 function isAndroid() { return /android/i.test(navigator.userAgent); }
+
+async function showDevRelinkSheet() {
+  const ov = document.createElement('div'); ov.className = 'modal-overlay';
+  const refresh = () => {
+    ov.querySelector('#drl-vault-s').textContent    = S.vaultDirHandle     ? '✓' : '–';
+    ov.querySelector('#drl-template-s').textContent = S.logTemplateHandle  ? '✓' : '–';
+    ov.querySelector('#drl-output-s').textContent   = S.logOutputDirHandle ? '✓' : '–';
+    ov.querySelector('#drl-events-s').textContent   = S.eventsDirHandle    ? '✓' : '–';
+    const done = S.vaultDirHandle && S.logTemplateHandle && S.logOutputDirHandle && S.eventsDirHandle;
+    ov.querySelector('#drl-done').textContent = done ? '✓ All linked — Done' : 'Skip for now';
+  };
+  const row = (id, icon, label, hint) => `<div style="display:flex;align-items:center;gap:10px">
+    <button class="btn btn-ghost" style="flex:1;text-align:left" id="${id}">${icon} ${label} <small style="color:var(--muted)">${hint||''}</small></button>
+    <span id="${id}-s" style="font-size:18px;min-width:24px;text-align:center">–</span></div>`;
+  ov.innerHTML = `<div class="modal" style="max-height:85dvh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div style="font-size:15px;font-weight:800;margin-bottom:6px">🔗 Re-link Folders</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Preset loaded! Tap each to re-pick — the app knows the names, you just grant access.</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${row('drl-vault','📁','Vault Folder', LS.get('vaultFolderName')||'')}
+      ${row('drl-template','📄','Log Template', LS.get('logTemplateName')||'')}
+      ${row('drl-output','📁','Log Output Folder', LS.get('logOutputFolderName')||'')}
+      ${row('drl-events','📁','Events Folder', LS.get('eventsFolderName')||'')}
+    </div>
+    <button class="btn btn-ghost" style="width:100%;margin-top:18px" id="drl-done">Skip for now</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close = () => { if (document.body.contains(ov)) document.body.removeChild(ov); };
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  ov.querySelector('#drl-done').addEventListener('click', () => { close(); renderAll(); });
+  ov.querySelector('#drl-vault').addEventListener('click', async () => { const ok = await pickVaultFolder(); if (ok) { await loadFromVault(); renderAll(); } refresh(); });
+  ov.querySelector('#drl-template').addEventListener('click', async () => { await pickLogTemplateFile(); refresh(); });
+  ov.querySelector('#drl-output').addEventListener('click', async () => { await pickLogOutputFolder(); refresh(); });
+  ov.querySelector('#drl-events').addEventListener('click', async () => { await pickEventsFolder(); renderEventsCard(); refresh(); });
+  refresh();
+}
 
 function showSettings() {
   const ov=document.createElement('div'); ov.className='modal-overlay';
@@ -4838,6 +4871,14 @@ function showSettings() {
       <button class="btn btn-ghost" style="width:100%" id="s-install">📲 Install Guide</button>
     </div>
     <div class="s-section">
+      <div class="s-section-title">Dev Preset</div>
+      <div class="s-sub" style="margin-bottom:8px">Export/import all settings as JSON. File handles must be re-linked after import — one tap each.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" id="s-preset-export">⬇ Export Preset</button>
+        <button class="btn btn-ghost" style="flex:1" id="s-preset-import">⬆ Import Preset</button>
+      </div>
+    </div>
+    <div class="s-section">
       <div class="s-section-title">Danger Zone</div>
       <button class="btn btn-ghost" style="width:100%;color:var(--danger);border-color:rgba(255,68,102,.3)" id="s-clear">Clear All Data &amp; Reset</button>
     </div>
@@ -4886,6 +4927,30 @@ function showSettings() {
       localStorage.clear();
       location.reload();
     }
+  });
+  ov.querySelector('#s-preset-export').addEventListener('click', () => {
+    const KEYS = ['theme','logOutputFormat','pomoSettings','vaultFolderName','logTemplateName','logOutputFolderName','eventsFolderName','lastConfig','batteryTipDismissed'];
+    const snap = {};
+    for (const k of KEYS) { const v = LS.get(k); if (v !== null && v !== undefined) snap[k] = v; }
+    const blob = new Blob([JSON.stringify({ _version:1, _exported: new Date().toISOString(), localStorage: snap }, null, 2)], { type:'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'vaultdex-preset.json' });
+    a.click(); URL.revokeObjectURL(a.href);
+    showToast('✓ Preset exported');
+  });
+  ov.querySelector('#s-preset-import').addEventListener('click', () => {
+    const input = Object.assign(document.createElement('input'), { type:'file', accept:'.json,application/json' });
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0]; if (!file) return;
+      let preset; try { preset = JSON.parse(await file.text()); } catch { showToast('⚠ Invalid JSON'); return; }
+      if (!preset?.localStorage) { showToast('⚠ Not a valid preset'); return; }
+      for (const [k,v] of Object.entries(preset.localStorage)) LS.set(k,v);
+      const cfg = LS.get('lastConfig'); if (cfg) S.config = cfg;
+      const theme = LS.get('theme'); if (theme) applyTheme(theme);
+      close();
+      showToast('✓ Preset loaded — re-link your folders', 4000);
+      showDevRelinkSheet();
+    });
+    input.click();
   });
   // Theme segment
   ov.querySelectorAll('.theme-seg-btn').forEach(btn => {
@@ -5583,12 +5648,7 @@ async function boot() {
 
 boot();
 
-// ── Reset stale permission cache when app comes back from background ─────────
-// On iOS Safari and some Android browsers, File System Access handles become
-// "not usable" after the page is hidden (backgrounded). Clearing the per-session
-// _permGranted flags here forces a fresh requestPermission() call on next write,
-// preventing the "attempt was made on an object that is not, or is no longer,
-// usable" error without needing to re-pick files.
+// Reset stale File System Access permission cache when app resumes from background
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     S._permGranted = { logTemplate: false, logOutput: false, events: false };
