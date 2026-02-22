@@ -377,12 +377,15 @@ const S = {
   countdownInterval: null,
   checkInterval: null,
   vaultDirHandle: null,
+  _pendingHandle: null,
+  // Derived sub-handles (populated by deriveSubHandles after vault connected)
+  habitTrackerDirHandle: null,
   logDirHandle: null,
   logTemplateHandle: null,
   logOutputDirHandle: null,
-  _pendingLogOutputHandle: null,
   eventsDirHandle: null,
-  _pendingHandle: null,
+  // Session permission flag — vault permission asked once per session
+  _sessionPermissionGranted: false,
   scheduleOpen: false,
   notifPermission: Notification.permission,
 };
@@ -512,14 +515,51 @@ function fmtMs(ms) {
   return `${ss}s`;
 }
 
+// ── VAULT PATHS ─────────────────────────────────────────────────────────────
+// All sub-folder paths are relative to the vault root
+const VAULT_PATHS = {
+  habitTracker: ['0 - Personal Space', 'Habit Tracker'],
+  logOutput:    ['0 - Personal Space', 'Chrono Log', 'data'],
+  events:       ['0 - Personal Space', 'Events'],
+};
+
+// Navigate (and optionally create) a chain of subdirectories from a root handle.
+async function _navSubDir(root, pathParts, create = true) {
+  try {
+    let dir = root;
+    for (const seg of pathParts) {
+      dir = await dir.getDirectoryHandle(seg, { create });
+    }
+    return dir;
+  } catch { return null; }
+}
+
+// Populate all sub-handles from the vault root. Called after permission granted.
+async function deriveSubHandles() {
+  if (!S.vaultDirHandle) return;
+  try {
+    S.habitTrackerDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.habitTracker, true);
+    S.logOutputDirHandle    = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
+    S.eventsDirHandle       = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.events, true);
+    // Log template is a file inside logOutput dir
+    if (S.logOutputDirHandle) {
+      try {
+        S.logTemplateHandle = await S.logOutputDirHandle.getFileHandle('_Daily_Log_Template.md', { create: false });
+      } catch { S.logTemplateHandle = null; }
+    }
+  } catch(e) { console.warn('deriveSubHandles:', e.message); }
+}
+
 // ── VAULT FOLDER ───────────────────────────────────────────────────────────
 async function pickVaultFolder() {
   try {
     const dh = await window.showDirectoryPicker({ mode:'readwrite', id:'vault' });
     S.vaultDirHandle = dh;
     S._pendingHandle = null;
+    S._sessionPermissionGranted = true;
     await IDB.set('vaultHandle', dh);
     LS.set('vaultFolderName', dh.name);
+    await deriveSubHandles();
     showToast(`📁 ${dh.name} connected`);
     return true;
   } catch(e) {
@@ -545,6 +585,7 @@ async function restoreVaultHandle() {
     }
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
+      S._sessionPermissionGranted = true;
       return 'granted';
     }
     S._pendingHandle = dh;
@@ -560,7 +601,9 @@ async function reconnectVault() {
     if (perm === 'granted') {
       S.vaultDirHandle = dh;
       S._pendingHandle = null;
+      S._sessionPermissionGranted = true;
       document.getElementById('reconnect-area').innerHTML = '';
+      await deriveSubHandles();
       return true;
     }
   } catch {}
@@ -570,10 +613,11 @@ async function reconnectVault() {
 // ── GET DATA SUBFOLDER ─────────────────────────────────────────────────────
 // Returns the vault/data/ DirectoryHandle, creating it if needed
 async function getDataDir() {
+  if (S.habitTrackerDirHandle) return S.habitTrackerDirHandle;
   if (!S.vaultDirHandle) return null;
-  try {
-    return await S.vaultDirHandle.getDirectoryHandle('data', { create: true });
-  } catch(e) { console.error('getDataDir:', e); return null; }
+  // Fallback: derive on-demand
+  S.habitTrackerDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.habitTracker, true);
+  return S.habitTrackerDirHandle;
 }
 
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
@@ -588,7 +632,9 @@ async function loadFromVault() {
 async function loadTemplate() {
   if (!S.vaultDirHandle) return false;
   try {
-    for await (const entry of S.vaultDirHandle.values()) {
+    // Search in Habit Tracker subfolder, fall back to vault root for backward compat
+    const searchDir = (await getDataDir()) || S.vaultDirHandle;
+    for await (const entry of searchDir.values()) {
       if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const text = await file.text();
@@ -1586,13 +1632,14 @@ async function saveHabitDefinitionsToVault() {
   LS.set('lastScheduleEdit', Date.now());
   if (!S.vaultDirHandle || !S.config) return;
   try {
-    for await (const entry of S.vaultDirHandle.values()) {
+    const searchDir = (await getDataDir()) || S.vaultDirHandle;
+    for await (const entry of searchDir.values()) {
       if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
         const newText = rebuildHabitDefsInMd(originalText, S.config.habitDefinitions || {});
         if (newText === null) continue;
-        const fh = await S.vaultDirHandle.getFileHandle(entry.name, { create: false });
+        const fh = await searchDir.getFileHandle(entry.name, { create: false });
         const w = await fh.createWritable();
         await w.write(newText);
         await w.close();
@@ -3475,7 +3522,8 @@ async function saveScheduleToVault() {
   if (!S.vaultDirHandle || !S.config) return;
   try {
     // Find the config .md file
-    for await (const entry of S.vaultDirHandle.values()) {
+    const searchDir = (await getDataDir()) || S.vaultDirHandle;
+    for await (const entry of searchDir.values()) {
       if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
         const originalText = await file.text();
@@ -3488,7 +3536,7 @@ async function saveScheduleToVault() {
         await writeScheduleBackup(originalText, entry.name);
 
         // Write the updated config back to the main .md file
-        const fh = await S.vaultDirHandle.getFileHandle(entry.name, { create: false });
+        const fh = await searchDir.getFileHandle(entry.name, { create: false });
         const w = await fh.createWritable();
         await w.write(newText);
         await w.close();
@@ -3663,7 +3711,6 @@ async function pickLogTemplateFile() {
       excludeAcceptAllOption: true,
     });
     S.logTemplateHandle = fh;
-    await IDB.set('logTemplateHandle', fh);
     LS.set('logTemplateName', fh.name);
     showToast(`📄 ${fh.name} set as log template`);
     return true;
@@ -3674,73 +3721,36 @@ async function pickLogTemplateFile() {
 }
 
 async function restoreLogTemplateHandle() {
-  try {
-    const fh = await IDB.get('logTemplateHandle');
-    if (!fh) return;
-    let perm;
-    try { perm = await fh.queryPermission({ mode: 'read' }); } catch { return; }
-    // Store handle regardless — permission will be re-requested on first use (inside click handler)
-    S.logTemplateHandle = fh;
-  } catch {}
+  // Derived from vault via deriveSubHandles() — nothing to restore from IDB separately
+  if (!S.logTemplateHandle && S.vaultDirHandle && S.logOutputDirHandle) {
+    try {
+      S.logTemplateHandle = await S.logOutputDirHandle.getFileHandle('_Daily_Log_Template.md', { create: false });
+    } catch {}
+  }
 }
 
 async function restoreLogOutputHandle() {
-  try {
-    const dh = await IDB.get('logOutputHandle');
-    if (!dh) return;
-    // Store as pending — permission will be re-granted on first user gesture (log button tap)
-    S._pendingLogOutputHandle = dh;
-  } catch {}
+  // Derived from vault via deriveSubHandles() — nothing to restore from IDB separately
 }
 
-// Called from the log popup button (user gesture) — always re-requests permission fresh
-// If the handle is stale, clears it and makes user re-pick the folder
-async function ensureLogOutputPermission() {
-  // Already live this session
+// Called to ensure log output handle is ready before writing
+async function _activateLogOutputHandle() {
   if (S.logOutputDirHandle) return true;
-
-  const dh = S._pendingLogOutputHandle;
-
-  // No handle at all — prompt to pick
-  if (!dh) {
-    showToast('Pick your log output folder first');
-    await pickLogOutputFolder();
-    return !!S.logOutputDirHandle;
-  }
-
-  // Try to re-grant permission (safe inside user gesture)
-  try {
-    const perm = await dh.requestPermission({ mode: 'readwrite' });
-    if (perm === 'granted') {
-      S.logOutputDirHandle = dh;
-      S._pendingLogOutputHandle = null;
-      return true;
-    }
-    // Permission prompt dismissed / denied
-    return false;
-  } catch(e) {
-    // Stale handle — clear everything and make user re-pick
-    console.warn('Log output handle stale, clearing:', e.message);
-    S._pendingLogOutputHandle = null;
-    await IDB.del('logOutputHandle').catch(() => {});
-    LS.del('logOutputFolderName');
-    showToast('Log folder reset — please re-select it in Settings');
-    return false;
-  }
+  if (!S.vaultDirHandle) return false;
+  // Derive on demand if not yet set
+  S.logOutputDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
+  return !!S.logOutputDirHandle;
 }
 
 async function pickLogOutputFolder() {
-  try {
-    const dh = await window.showDirectoryPicker({ mode: 'readwrite', id: 'logOutput' });
-    S.logOutputDirHandle = dh;
-    await IDB.set('logOutputHandle', dh);
-    LS.set('logOutputFolderName', dh.name);
-    showToast(`📁 ${dh.name} set as log output folder`);
+  if (!S.vaultDirHandle) { showToast('Connect a vault first in Settings'); return false; }
+  S.logOutputDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
+  if (S.logOutputDirHandle) {
+    LS.set('logOutputFolderName', VAULT_PATHS.logOutput.join('/'));
+    showToast(`📁 Log output: ${VAULT_PATHS.logOutput.join('/')}`);
     return true;
-  } catch(e) {
-    if (e.name !== 'AbortError') showToast('Could not open folder');
-    return false;
   }
+  return false;
 }
 
 // ── EVENTS SYSTEM ─────────────────────────────────────────────────────────
@@ -3748,22 +3758,18 @@ async function pickLogOutputFolder() {
 // Each file has YAML frontmatter: title, date (YYYY-MM-DD), time (HH:MM optional), note
 
 async function pickEventsFolder() {
-  try {
-    const dh = await window.showDirectoryPicker({ mode: 'readwrite' });
-    S.eventsDirHandle = dh;
-    await IDB.set('eventsHandle', dh);
-    LS.set('eventsFolderName', dh.name);
-    showToast(`✓ Events folder: ${dh.name}`);
+  if (!S.vaultDirHandle) { showToast('Connect a vault first in Settings'); return false; }
+  S.eventsDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.events, true);
+  if (S.eventsDirHandle) {
+    LS.set('eventsFolderName', VAULT_PATHS.events.join('/'));
+    showToast(`✓ Events folder: ${VAULT_PATHS.events.join('/')}`);
     return true;
-  } catch { return false; }
+  }
+  return false;
 }
 
 async function restoreEventsHandle() {
-  try {
-    const dh = await IDB.get('eventsHandle');
-    if (!dh) return;
-    S.eventsDirHandle = dh;
-  } catch {}
+  // Derived from vault via deriveSubHandles() — nothing to restore from IDB separately
 }
 
 async function loadEvents() {
@@ -3966,15 +3972,6 @@ async function renderEventsCard() {
 
 // ── END EVENTS SYSTEM ──────────────────────────────────────────────────────
 
-async function reconnectLogTemplate() {
-  const fh = S._pendingLogHandle || await IDB.get('logTemplateHandle').catch(()=>null);
-  if (!fh) return false;
-  try {
-    const perm = await fh.requestPermission({ mode: 'readwrite' });
-    if (perm === 'granted') { S.logTemplateHandle = fh; S._pendingLogHandle = null; return true; }
-  } catch {}
-  return false;
-}
 
 // ── LOG WRITING HELPERS ────────────────────────────────────────────────────
 function sanitizeForYAML(input) {
@@ -4003,6 +4000,31 @@ function fmtTimeHMA(d) {
   const ap = h >= 12 ? 'pm' : 'am';
   h = h % 12 || 12;
   return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' ' + ap;
+}
+
+// ── FILE WRITE HELPER ─────────────────────────────────────────────────────
+// Chrome Android PWA bug: createWritable() throws InvalidStateError on some handles.
+// Fix: call getFile() first to "activate" the handle, then createWritable().
+// If that also fails, fall back to truncate+write via seek.
+async function _writeFileHandle(fh, content) {
+  // Warm up the handle (fixes Chrome Android InvalidStateError)
+  try { await fh.getFile(); } catch {}
+
+  let w;
+  try {
+    w = await fh.createWritable({ keepExistingData: false });
+  } catch(e) {
+    // Last resort: createWritable with no options
+    w = await fh.createWritable();
+  }
+
+  try {
+    await w.write(content);
+    await w.close();
+  } catch(e) {
+    try { await w.abort(); } catch {}
+    throw e;
+  }
 }
 
 async function writeLogEntry(logText) {
@@ -4070,20 +4092,46 @@ async function writeLogEntry(logText) {
   };
   try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB save failed:', e); }
 
-  // ── Write to folder — mirrors writeHabitData pattern exactly ──
-  if (!S.logOutputDirHandle) {
-    showToast('\u2713 Log saved (no output folder set)');
-    return true;
+  // ── Write to folder (auto, no picker every time) ──
+  await _writeLogToFolder(idbEntry, newContent, subDirs, baseFilename);
+  return true;
+}
+
+// Tries to write using the stored dir handle.
+// If it fails or doesn't exist, prompts once to pick the folder, then retries.
+async function _writeLogToFolder(idbEntry, content, subDirs, baseFilename) {
+  // Activate pending handle if available (requires user gesture — we're in save click chain)
+  if (!S.logOutputDirHandle) await _activateLogOutputHandle();
+
+  // Try with existing handle first
+  if (S.logOutputDirHandle) {
+    const ok = await _tryWriteLog(S.logOutputDirHandle, idbEntry, content, subDirs, baseFilename);
+    if (ok) return;
+    // Handle went stale — clear and re-derive from vault
+    S.logOutputDirHandle = null;
   }
 
+  // Re-derive from vault
+  if (S.vaultDirHandle) {
+    S.logOutputDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
+    if (S.logOutputDirHandle) {
+      const ok = await _tryWriteLog(S.logOutputDirHandle, idbEntry, content, subDirs, baseFilename);
+      if (ok) return;
+    }
+  }
+
+  showToast('⚠ Log folder unavailable — connect vault in Settings');
+}
+
+// Attempts a write with a given dir handle. Returns true on success, false on any error.
+async function _tryWriteLog(rootHandle, idbEntry, content, subDirs, baseFilename) {
   try {
-    // Navigate / create subdirectories — same as writeHabitData does with getDataDir
-    let dir = S.logOutputDirHandle;
+    let dir = rootHandle;
     for (const seg of subDirs) {
       dir = await dir.getDirectoryHandle(seg, { create: true });
     }
 
-    // Find unique filename
+    // Unique filename
     let filename = baseFilename;
     let suffix = 0;
     for (;;) {
@@ -4095,55 +4143,30 @@ async function writeLogEntry(logText) {
       filename = baseFilename.slice(0, dot) + '_' + suffix + baseFilename.slice(dot);
     }
 
-    // Write — exactly like writeHabitData: getFileHandle -> createWritable -> write -> close
     const fh = await dir.getFileHandle(filename, { create: true });
     const w = await fh.createWritable();
-    await w.write(newContent);
+    await w.write(content);
     await w.close();
 
-    // Update IDB with actual path
     idbEntry.filename = filename;
-    idbEntry.path = [...subDirs, filename].join('/');
+    idbEntry.path = [...subDirs, filename].join('/') || filename;
     await IDBLogs.save(idbEntry);
 
     showToast('\u2713 Log saved');
+    return true;
   } catch(e) {
-    console.error('Log folder write failed:', e);
-    // Any write error — treat handle as stale, clear it, let user re-pick via Settings
-    S.logOutputDirHandle = null;
-    S._pendingLogOutputHandle = null;
-    await IDB.del('logOutputHandle').catch(() => {});
-    LS.del('logOutputFolderName');
-    showToast('\u26a0 Log folder lost — re-select in Settings \u2699');
+    console.error('_tryWriteLog failed:', e);
+    return false;
   }
-
-  return true;
 }
 
 
 // ── LOG TEXT POPUP ───────────────────────────────────────────────────────────
 function showLogTextPopup() {
-  // If no template set, nudge user to set one first
-  if (!S.logTemplateHandle || !S.logOutputDirHandle) {
-    const missing = !S.logTemplateHandle && !S.logOutputDirHandle
-      ? 'Log template and output folder are'
-      : !S.logTemplateHandle ? 'Log template is' : 'Log output folder is';
-    const ov = document.createElement('div');
-    ov.className = 'sched-edit-popup';
-    ov.innerHTML = `<div class="sched-edit-sheet" style="max-height:70dvh">
-      <div class="modal-handle"></div>
-      <div style="font-size:16px;font-weight:800;margin-bottom:10px">Setup Required</div>
-      <div style="font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-bottom:20px;line-height:1.6">
-        ${missing} not set.<br><br>Go to Settings → Daily Log<br>to set your template file and output folder.
-      </div>
-      <button class="btn btn-green" id="ltp-goto" style="width:100%">⚙ Open Settings</button>
-    </div>`;
-    document.body.appendChild(ov);
-    const close = () => document.body.removeChild(ov);
-    ov.addEventListener('click', e => { if (e.target === ov) close(); });
-    ov.querySelector('#ltp-goto').addEventListener('click', () => { close(); showSettings(); });
-    return;
-  }
+  _openLogTextEditor();
+}
+
+function _openLogTextEditor() {
 
   const ov = document.createElement('div');
   ov.className = 'sched-edit-popup';
@@ -4733,10 +4756,7 @@ function _openLogEditor(log) {
       } catch(e) {
         console.error('Folder log edit write failed:', e);
         S.logOutputDirHandle = null;
-        S._pendingLogOutputHandle = null;
-        await IDB.del('logOutputHandle').catch(() => {});
-        LS.del('logOutputFolderName');
-        showToast('\u26a0 Log folder lost — re-select in Settings \u2699');
+        showToast('\u26a0 Folder error — reconnect vault in Settings');
       }
 
       // ── Update in-memory cache ──
@@ -4893,45 +4913,43 @@ function showSettings() {
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">Habit Tracker Folder</div>
+      <div class="s-section-title">Vault Folder</div>
       <div class="s-row">
-        <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">📄 .md config in root · 📁 data/ for daily habit files</div></div>
+        <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">All subfolders are derived automatically from this vault root</div></div>
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Habit Tracker Folder</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Vault Folder</button>
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">Events</div>
-      <div class="s-row">
-        <div>
-          <div class="s-label">📁 ${LS.get('eventsFolderName') || 'Not set'}</div>
-          <div class="s-sub">Folder where event .md files are stored</div>
-        </div>
-        <span class="pill ${S.eventsDirHandle?'pill-green':'pill-amber'}">${S.eventsDirHandle?'SET':'UNSET'}</span>
+      <div class="s-section-title">📂 Vault Subfolders</div>
+      <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;line-height:2.2">
+        <div>📁 <span style="color:var(--text)">Habit Tracker:</span> ${vaultName}/0 - Personal Space/Habit Tracker</div>
+        <div>📁 <span style="color:var(--text)">Log Output:</span> ${vaultName}/0 - Personal Space/Chrono Log/data</div>
+        <div>📄 <span style="color:var(--text)">Log Template:</span> _Daily_Log_Template.md <span style="color:var(--muted)">(in Log Output)</span></div>
+        <div>📁 <span style="color:var(--text)">Events:</span> ${vaultName}/0 - Personal Space/Events</div>
       </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-events">Set Events Folder</button>
+      <div class="s-row" style="margin-top:10px">
+        <div><div class="s-label">Habit Tracker</div></div>
+        <span class="pill ${S.habitTrackerDirHandle?'pill-green':'pill-amber'}">${S.habitTrackerDirHandle?'✓':'–'}</span>
+      </div>
+      <div class="s-row">
+        <div><div class="s-label">Log Output</div></div>
+        <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'✓':'–'}</span>
+      </div>
+      <div class="s-row">
+        <div><div class="s-label">Log Template</div></div>
+        <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'✓':'–'}</span>
+      </div>
+      <div class="s-row">
+        <div><div class="s-label">Events</div></div>
+        <span class="pill ${S.eventsDirHandle?'pill-green':'pill-amber'}">${S.eventsDirHandle?'✓':'–'}</span>
+      </div>
     </div>
 
     <div class="s-section">
       <div class="s-section-title">Daily Log</div>
-      <div class="s-row">
-        <div>
-          <div class="s-label">📄 Template: ${LS.get('logTemplateName') || 'Not set'}</div>
-          <div class="s-sub">The .md file used as the log entry template</div>
-        </div>
-        <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'SET':'UNSET'}</span>
-      </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-template">Set Log Template File</button>
-      <div class="s-row" style="margin-top:10px">
-        <div>
-          <div class="s-label">📁 Output: ${LS.get('logOutputFolderName') || 'Not set'}</div>
-          <div class="s-sub">Folder where new log entries are saved</div>
-        </div>
-        <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'SET':'UNSET'}</span>
-      </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-output">Set Log Output Folder</button>
-      <div class="s-row" style="margin-top:10px;flex-direction:column;align-items:stretch;gap:6px">
+      <div class="s-row" style="flex-direction:column;align-items:stretch;gap:6px">
         <div>
           <div class="s-label">📂 Output File Format</div>
           <div class="s-sub">Obsidian-style date tokens. Use / for subfolders.</div>
@@ -4965,9 +4983,7 @@ function showSettings() {
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
-  ov.querySelector('#s-set-events')?.addEventListener('click', async () => { close(); await pickEventsFolder(); renderEventsCard(); showSettings(); });
-  ov.querySelector('#s-set-log-template').addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
-  ov.querySelector('#s-set-log-output').addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
+
 
   // ── Output format live preview + save ──
   const fmtIn = ov.querySelector('#s-log-fmt');
@@ -5320,16 +5336,7 @@ function buildSkeleton() {
 
 
   // ── Log text button ──
-  document.getElementById('log-text-btn')?.addEventListener('click', async () => {
-    // Re-grant or re-pick folder on every tap (user gesture required)
-    const ready = await ensureLogOutputPermission();
-    // If still no handle after ensure, open picker directly
-    if (!S.logOutputDirHandle) {
-      const picked = await pickLogOutputFolder();
-      if (!picked) return;
-    }
-    showLogTextPopup();
-  });
+  document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
   document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
   document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
@@ -5689,6 +5696,7 @@ async function boot() {
   // Attempt to restore vault handle from IndexedDB (optional — habit tracker folder)
   const state = await restoreVaultHandle();
   if (state === 'granted') {
+    await deriveSubHandles();
     await loadFromVault();
     renderAll();
   } else if (state === 'needs-grant') {
