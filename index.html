@@ -397,8 +397,12 @@ const IDB = (() => {
   let db = null;
   const open = () => new Promise((res,rej) => {
     if (db) { res(db); return; }
-    const r = indexedDB.open('habit-tracker-v1', 1);
-    r.onupgradeneeded = e => e.target.result.createObjectStore('kv');
+    const r = indexedDB.open('habit-tracker-v1', 2);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('kv'))   d.createObjectStore('kv');
+      if (!d.objectStoreNames.contains('logs'))  d.createObjectStore('logs', { keyPath: 'id' });
+    };
     r.onsuccess = e => { db = e.target.result; res(db); };
     r.onerror = () => rej(r.error);
   });
@@ -430,10 +434,55 @@ const IDB = (() => {
         tx.onerror = () => rej(tx.error);
       });
     },
+    open, // expose open() for IDBLogs
   };
 })();
 
-// ── DATE / FILE HELPERS ────────────────────────────────────────────────────
+// ── IDB LOG STORE ──────────────────────────────────────────────────────────
+// Logs are saved here on ALL platforms (primary storage).
+// On desktop they are ALSO written to the output folder.
+// On Android the folder write silently fails — IDB is the only storage.
+const IDBLogs = {
+  async save(log) {
+    const d = await IDB.open();
+    return new Promise((res,rej) => {
+      const tx = d.transaction('logs','readwrite');
+      tx.objectStore('logs').put(log);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  async getAll() {
+    const d = await IDB.open();
+    return new Promise((res,rej) => {
+      const tx = d.transaction('logs','readonly');
+      const r = tx.objectStore('logs').getAll();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async get(id) {
+    const d = await IDB.open();
+    return new Promise((res,rej) => {
+      const tx = d.transaction('logs','readonly');
+      const r = tx.objectStore('logs').get(id);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async delete(id) {
+    const d = await IDB.open();
+    return new Promise((res,rej) => {
+      const tx = d.transaction('logs','readwrite');
+      tx.objectStore('logs').delete(id);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+};
+
+
+
 function todayStr() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
 function todayFilename() { return `22101995${todayStr()}HT.md`; }
 
@@ -3914,121 +3963,105 @@ function fmtTimeHMA(d) {
 
 async function writeLogEntry(logText) {
   const now = new Date();
-  const dateStr = fmtDateYMD(now);     // YYYY-MM-DD
-  const timeStr = fmtTimeHMA(now);     // hh:mm am/pm
+  const dateStr = fmtDateYMD(now);
+  const timeStr = fmtTimeHMA(now);
 
-  // ── Extract #tags from user text, clean them out of the log body ──
   const { tags, cleaned } = extractTagsFromText(logText);
   const sanitizedLog = sanitizeForYAML(cleaned);
+  const finalTags = tags.length ? tags : ['explore'];
 
-  if (!S.logTemplateHandle) {
-    showToast('No log template set — tap ⚙ Settings → Set Log Template');
-    return false;
-  }
-
-  let templateText;
-  try {
-    const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
-    if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
-    const file = await S.logTemplateHandle.getFile();
-    templateText = await file.text();
-  } catch(e) {
-    showToast('Could not read log template: ' + e.message);
-    return false;
-  }
-
-  // ── Fill in {{date:YYYY-MM-DD}} and {{DATE:hh:mm a}} placeholders ──
-  let filled = templateText
-    .replace(/\{\{date:YYYY-MM-DD\}\}/g, dateStr)
-    .replace(/\{\{DATE:hh:mm a\}\}/g, timeStr);
-
-  // ── Parse YAML frontmatter ──
-  const fmMatch = filled.match(/^(---\n)([\s\S]+?)(\n---)([ \S]*)/);
-  if (!fmMatch) { showToast('Template has no YAML frontmatter'); return false; }
-  const [, open, yaml, close, body] = fmMatch;
-  const yamlLines = yaml.split('\n');
-
-  // ── Set log field ──
-  const logIdx = yamlLines.findIndex(l => l.startsWith('log:'));
-  if (logIdx !== -1) {
-    yamlLines[logIdx] = `log: ${sanitizedLog}`;
-  } else {
-    yamlLines.push(`log: ${sanitizedLog}`);
-  }
-
-  // ── Merge tags ──
-  const tagsIdx = yamlLines.findIndex(l => l.trim() === 'tags:');
-  let existingTags = [];
-  if (tagsIdx !== -1) {
-    let i = tagsIdx + 1;
-    while (i < yamlLines.length && yamlLines[i].trim().startsWith('- ')) {
-      existingTags.push(yamlLines[i].trim().replace(/^- /, ''));
-      i++;
-    }
-    // Remove old tags block
-    yamlLines.splice(tagsIdx, existingTags.length + 1);
-  }
-  const mergedTags = [...new Set([...existingTags, ...tags])];
-  const finalTags = mergedTags.length > 0 ? mergedTags : ['explore'];
-
-  // Insert tags block — find log position again after potential splice
-  const logIdx2 = yamlLines.findIndex(l => l.startsWith('log:'));
-  const insertAt = logIdx2 !== -1 ? logIdx2 : yamlLines.length;
-  yamlLines.splice(insertAt, 0, 'tags:', ...finalTags.map(t => `  - ${t}`));
-
-  // ── Build final content ──
-  const newContent = open + yamlLines.join('\n') + close + body;
-
-  // ── Write to output folder as a new timestamped file ──
-  if (!S.logOutputDirHandle) {
-    showToast('No log output folder set — tap ⚙ Settings → Set Log Output Folder');
-    return false;
-  }
-  try {
-    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
-
-    // ── Flexible output path from user format setting ──
-    // Default: {{date:YYYY}}/{{date:YYYYMMDDHHmmss}}
-    const fmt = LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
-    const basePath = applyDateFormat(fmt, now);
-    const parts = basePath.split('/');
-    const baseFilename = (parts.pop() || 'log') + '.md';
-    const subDirs = parts; // may be empty
-
-    // Navigate / create subdirectory chain
-    let dir = S.logOutputDirHandle;
-    for (const seg of subDirs) {
-      if (!seg) continue;
-      dir = await dir.getDirectoryHandle(seg, { create: true });
-    }
-
-    // Auto-increment filename to avoid collisions
-    let filename = baseFilename;
-    let suffix = 0;
-    while (true) {
-      try {
-        await dir.getFileHandle(filename, { create: false });
-        // file exists — increment
-        suffix++;
-        const dotIdx = baseFilename.lastIndexOf('.');
-        const base = dotIdx !== -1 ? baseFilename.slice(0, dotIdx) : baseFilename;
-        const ext  = dotIdx !== -1 ? baseFilename.slice(dotIdx) : '';
-        filename = `${base}${String(suffix).padStart(2,'0')}${ext}`;
-      } catch {
-        break; // file doesn't exist — use this name
+  // ── Build content (from template if available, otherwise minimal YAML) ──
+  let newContent;
+  if (S.logTemplateHandle) {
+    try {
+      const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        const file = await S.logTemplateHandle.getFile();
+        let templateText = await file.text();
+        templateText = templateText
+          .replace(/\{\{date:YYYY-MM-DD\}\}/g, dateStr)
+          .replace(/\{\{DATE:hh:mm a\}\}/g, timeStr);
+        const fmMatch = templateText.match(/^(---\n)([\s\S]+?)(\n---)([ \S]*)/);
+        if (fmMatch) {
+          const [, open, yaml, close, body] = fmMatch;
+          let yamlLines = yaml.split('\n');
+          const logIdx = yamlLines.findIndex(l => l.startsWith('log:'));
+          if (logIdx !== -1) yamlLines[logIdx] = `log: ${sanitizedLog}`;
+          else yamlLines.push(`log: ${sanitizedLog}`);
+          const tagsIdx = yamlLines.findIndex(l => l.trim() === 'tags:');
+          let existingTags = [];
+          if (tagsIdx !== -1) {
+            let i = tagsIdx + 1;
+            while (i < yamlLines.length && yamlLines[i].trim().startsWith('- ')) {
+              existingTags.push(yamlLines[i].trim().replace(/^- /, '')); i++;
+            }
+            yamlLines.splice(tagsIdx, existingTags.length + 1);
+          }
+          const mergedTags = [...new Set([...existingTags, ...finalTags])];
+          const logIdx2 = yamlLines.findIndex(l => l.startsWith('log:'));
+          const insertAt = logIdx2 !== -1 ? logIdx2 : yamlLines.length;
+          yamlLines.splice(insertAt, 0, 'tags:', ...mergedTags.map(t => `  - ${t}`));
+          newContent = open + yamlLines.join('\n') + close + body;
+        }
       }
-    }
-
-    const fh = await dir.getFileHandle(filename, { create: true });
-    const writable = await fh.createWritable();
-    await writable.write(newContent);
-    await writable.close();
-    return true;
-  } catch(e) {
-    showToast('Could not write log: ' + e.message);
-    return false;
+    } catch {}
   }
+  // Fallback: build minimal content without template
+  if (!newContent) {
+    newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n`;
+  }
+
+  // ── Generate a unique ID/filename ──
+  const ts = now.toISOString().replace(/[-:.TZ]/g,'').slice(0,14);
+  const fmt = LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
+  const basePath = applyDateFormat(fmt, now);
+  const parts = basePath.split('/');
+  const baseFilename = (parts.pop() || ts) + '.md';
+  const id = ts + '_' + Math.random().toString(36).slice(2,6);
+
+  // ── 1. Save to IDB immediately (works on all platforms) ──
+  const idbEntry = {
+    id,
+    filename: baseFilename,
+    path: basePath + '.md',
+    content: newContent,
+    preview: sanitizedLog.slice(0, 120),
+    tags: finalTags,
+    dateLabel: _filenameToLabel(baseFilename),
+    ts: now.getTime(),
+  };
+  try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB log save failed:', e); }
+
+  // ── 2. Attempt folder write (desktop) — silently skip on Android ──
+  if (S.logOutputDirHandle) {
+    try {
+      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        const subDirs = basePath.split('/').slice(0, -1);
+        let dir = S.logOutputDirHandle;
+        for (const seg of subDirs) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
+        // Auto-increment to avoid collisions
+        let filename = baseFilename;
+        let suffix = 0;
+        while (true) {
+          try { await dir.getFileHandle(filename, { create: false }); suffix++;
+            const dot = baseFilename.lastIndexOf('.');
+            filename = baseFilename.slice(0,dot) + String(suffix).padStart(2,'0') + baseFilename.slice(dot);
+          } catch { break; }
+        }
+        const fh = await dir.getFileHandle(filename, { create: true });
+        const w = await fh.createWritable();
+        await w.write(newContent);
+        await w.close();
+        // Update IDB entry with the actual filename used
+        idbEntry.filename = filename;
+        idbEntry.path = [...subDirs, filename].filter(Boolean).join('/');
+        await IDBLogs.save(idbEntry);
+      }
+    } catch(e) { console.warn('Folder log write silently failed (IDB used):', e.message); }
+  }
+
+  return true;
 }
 
 // ── LOG TEXT POPUP ───────────────────────────────────────────────────────────
@@ -4198,18 +4231,49 @@ async function loadAllLogs() {
   _logsLoading = true;
   _setLogsStatus('Loading…');
 
-  if (!S.logOutputDirHandle) {
-    _logsSetEmpty('No log output folder set.<br><small style="color:var(--muted);font-size:11px">Go to Settings → Daily Log → Set Log Output Folder</small><br><button onclick="showSettings()" style="margin-top:10px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:var(--font-mono);cursor:pointer">⚙ Open Settings</button>');
+  const entries = [];
+
+  // ── 1. Load from IDB (works on all platforms) ──
+  try {
+    const idbLogs = await IDBLogs.getAll();
+    for (const log of idbLogs) {
+      entries.push({
+        filename: log.filename,
+        path: log.path,
+        handle: null,       // no file handle — IDB only
+        idbId: log.id,      // IDB key for edits/deletes
+        preview: log.preview,
+        tags: log.tags || [],
+        dateLabel: log.dateLabel || _filenameToLabel(log.filename),
+        _fullText: log.content,
+        loaded: true,
+        ts: log.ts || 0,
+      });
+    }
+  } catch(e) { console.warn('IDB log load failed:', e); }
+
+  // ── 2. Load from folder (desktop) — merge, dedup by filename ──
+  if (S.logOutputDirHandle) {
+    try {
+      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        const folderEntries = [];
+        await _scanLogDir(S.logOutputDirHandle, '', folderEntries);
+        // Add folder entries that aren't already in IDB (dedup by filename)
+        const idbFilenames = new Set(entries.map(e => e.filename));
+        for (const fe of folderEntries) {
+          if (!idbFilenames.has(fe.filename)) entries.push(fe);
+        }
+      }
+    } catch(e) { console.warn('Folder log scan failed:', e.message); }
+  }
+
+  if (!entries.length) {
+    _logsSetEmpty('No logs yet.<br><small style="color:var(--muted);font-size:11px">Tap the log button to write your first entry.</small>');
     _logsLoading = false; return;
   }
-  try {
-    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
-  } catch { _logsSetEmpty('Permission error.'); _logsLoading = false; return; }
 
-  const entries = [];
-  await _scanLogDir(S.logOutputDirHandle, '', entries);
-  entries.sort((a, b) => b.filename.localeCompare(a.filename));
+  entries.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
   _allLogs = entries;
   _logsApplyFilter();
   _logsLoading = false;
@@ -4568,14 +4632,50 @@ function _openLogEditor(log) {
         newFullText = `---\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n${normRaw}`;
       }
 
-      // ── Write to disk ──
-      const dir = await _getLogParentDir(log);
-      const ok = await _ensureWritePermission(dir);
-      if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
-      const fh = await dir.getFileHandle(log.filename, { create: false });
-      const w = await fh.createWritable();
-      await w.write(newFullText);
-      await w.close();
+      // ── Write: IDB first, then folder ──
+      // 1. Update IDB entry (always works)
+      if (log.idbId) {
+        try {
+          const existing = await IDBLogs.get(log.idbId);
+          if (existing) {
+            existing.content = newFullText;
+            existing.preview = sanitizedLog.slice(0, 120);
+            existing.tags = finalTags;
+            await IDBLogs.save(existing);
+          }
+        } catch(e) { console.warn('IDB log update failed:', e); }
+      }
+
+      // 2. Attempt folder write (desktop) — use log.handle if available
+      if (log.handle) {
+        try {
+          let perm;
+          try { perm = await log.handle.queryPermission({ mode: 'readwrite' }); } catch { perm = 'prompt'; }
+          if (perm !== 'granted') {
+            try { perm = await log.handle.requestPermission({ mode: 'readwrite' }); } catch { perm = 'denied'; }
+          }
+          if (perm === 'granted') {
+            const w = await log.handle.createWritable();
+            await w.write(newFullText);
+            await w.close();
+          }
+        } catch(e) { console.warn('Folder log edit write failed (IDB updated):', e.message); }
+      } else if (S.logOutputDirHandle) {
+        // IDB-only log — also write to folder now if folder is available
+        try {
+          const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+          if (perm === 'granted') {
+            const pathParts = log.path.split('/');
+            const filename = pathParts.pop();
+            let dir = S.logOutputDirHandle;
+            for (const seg of pathParts) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
+            const fh = await dir.getFileHandle(filename, { create: true });
+            const w = await fh.createWritable();
+            await w.write(newFullText);
+            await w.close();
+          }
+        } catch(e) { console.warn('Folder write for IDB log failed:', e.message); }
+      }
 
       // ── Update in-memory cache ──
       log._fullText = newFullText;
