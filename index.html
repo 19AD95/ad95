@@ -484,21 +484,17 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
-    // Validate the handle is usable — bad handles from old deployments throw here
     let perm;
+    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch {
+      await IDB.del('vaultHandle'); LS.del('vaultFolderName'); return 'none';
+    }
+    if (perm === 'granted') { S.vaultDirHandle = dh; return 'granted'; }
+    // Try requestPermission directly — Chrome grants silently if it remembers the folder.
+    // Only shows a prompt if the browser has truly forgotten (rare after full restart).
     try {
-      perm = await dh.queryPermission({ mode: 'readwrite' });
-    } catch {
-      // Handle is corrupt/stale (e.g. from a different origin/deployment)
-      // Clear it so user gets a clean first-run setup
-      await IDB.del('vaultHandle');
-      LS.del('vaultFolderName');
-      return 'none';
-    }
-    if (perm === 'granted') {
-      S.vaultDirHandle = dh;
-      return 'granted';
-    }
+      perm = await dh.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') { S.vaultDirHandle = dh; return 'granted'; }
+    } catch {}
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
@@ -517,55 +513,6 @@ async function reconnectVault() {
     }
   } catch {}
   return false;
-}
-
-// Re-grant ALL stored handles in one user gesture — vault + log template +
-// log output + events. Call this from a button click so the browser allows
-// the requestPermission() calls (they require a user gesture).
-async function reconnectAllHandles() {
-  let anyFailed = false;
-
-  // Vault
-  const vaultDh = S._pendingHandle || await IDB.get('vaultHandle').catch(()=>null);
-  if (vaultDh) {
-    try {
-      const p = await vaultDh.requestPermission({ mode: 'readwrite' });
-      if (p === 'granted') { S.vaultDirHandle = vaultDh; S._pendingHandle = null; }
-      else anyFailed = true;
-    } catch { anyFailed = true; }
-  }
-
-  // Log template (read-only file)
-  const tmplFh = await IDB.get('logTemplateHandle').catch(()=>null);
-  if (tmplFh) {
-    try {
-      const p = await tmplFh.requestPermission({ mode: 'read' });
-      if (p === 'granted') S.logTemplateHandle = tmplFh;
-      else anyFailed = true;
-    } catch { anyFailed = true; }
-  }
-
-  // Log output folder
-  const outDh = await IDB.get('logOutputHandle').catch(()=>null);
-  if (outDh) {
-    try {
-      const p = await outDh.requestPermission({ mode: 'readwrite' });
-      if (p === 'granted') S.logOutputDirHandle = outDh;
-      else anyFailed = true;
-    } catch { anyFailed = true; }
-  }
-
-  // Events folder
-  const eventsDh = await IDB.get('eventsHandle').catch(()=>null);
-  if (eventsDh) {
-    try {
-      const p = await eventsDh.requestPermission({ mode: 'readwrite' });
-      if (p === 'granted') { S.eventsDirHandle = eventsDh; S._permGranted.events = true; }
-      else anyFailed = true;
-    } catch { anyFailed = true; }
-  }
-
-  return !anyFailed;
 }
 
 // ── GET DATA SUBFOLDER ─────────────────────────────────────────────────────
@@ -3680,8 +3627,10 @@ async function restoreLogTemplateHandle() {
     if (!fh) return;
     let perm;
     try { perm = await fh.queryPermission({ mode: 'read' }); } catch { return; }
-    // Store handle regardless — permission will be re-requested on first use (inside click handler)
-    S.logTemplateHandle = fh;
+    if (perm !== 'granted') {
+      try { perm = await fh.requestPermission({ mode: 'read' }); } catch {}
+    }
+    if (perm === 'granted') S.logTemplateHandle = fh;
   } catch {}
 }
 
@@ -3689,8 +3638,12 @@ async function restoreLogOutputHandle() {
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
-    try { await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    S.logOutputDirHandle = dh;
+    let perm;
+    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    if (perm !== 'granted') {
+      try { perm = await dh.requestPermission({ mode: 'readwrite' }); } catch {}
+    }
+    if (perm === 'granted') S.logOutputDirHandle = dh;
   } catch {}
 }
 
@@ -3728,7 +3681,12 @@ async function restoreEventsHandle() {
   try {
     const dh = await IDB.get('eventsHandle');
     if (!dh) return;
-    S.eventsDirHandle = dh;
+    let perm;
+    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    if (perm !== 'granted') {
+      try { perm = await dh.requestPermission({ mode: 'readwrite' }); } catch {}
+    }
+    if (perm === 'granted') { S.eventsDirHandle = dh; S._permGranted.events = true; }
   } catch {}
 }
 
@@ -4643,9 +4601,6 @@ function _openLogEditor(log) {
       }
 
       // ── Write to disk ──
-      // Use log.handle directly (the FileSystemFileHandle from the directory scan).
-      // Re-navigating via S.logOutputDirHandle → getFileHandle produces a new
-      // unverified handle that throws "not usable" on createWritable().
       let fh = log.handle;
       if (!fh) {
         const dir = await _getLogParentDir(log);
@@ -4880,14 +4835,6 @@ function showSettings() {
       <button class="btn btn-ghost" style="width:100%" id="s-install">📲 Install Guide</button>
     </div>
     <div class="s-section">
-      <div class="s-section-title">Dev Preset</div>
-      <div class="s-sub" style="margin-bottom:8px">Export your settings to a JSON file. On import, settings restore instantly and folders reconnect in one tap.</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" style="flex:1" id="s-preset-export">⬇ Export Preset</button>
-        <button class="btn btn-ghost" style="flex:1" id="s-preset-import">⬆ Import Preset</button>
-      </div>
-    </div>
-    <div class="s-section">
       <div class="s-section-title">Danger Zone</div>
       <button class="btn btn-ghost" style="width:100%;color:var(--danger);border-color:rgba(255,68,102,.3)" id="s-clear">Clear All Data &amp; Reset</button>
     </div>
@@ -4936,42 +4883,6 @@ function showSettings() {
       localStorage.clear();
       location.reload();
     }
-  });
-
-  ov.querySelector('#s-preset-export').addEventListener('click', () => {
-    const KEYS = ['theme','logOutputFormat','pomoSettings','vaultFolderName',
-                  'logTemplateName','logOutputFolderName','eventsFolderName',
-                  'lastConfig','lastScheduleEdit','batteryTipDismissed'];
-    const snap = {};
-    for (const k of KEYS) { const v = LS.get(k); if (v !== null && v !== undefined) snap[k] = v; }
-    const blob = new Blob([JSON.stringify({ _version:1, _exported: new Date().toISOString(), localStorage: snap }, null, 2)], { type:'application/json' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'vaultdex-preset.json' });
-    a.click(); URL.revokeObjectURL(a.href);
-    showToast('✓ Preset exported');
-  });
-
-  ov.querySelector('#s-preset-import').addEventListener('click', () => {
-    const input = Object.assign(document.createElement('input'), { type:'file', accept:'.json,application/json' });
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0]; if (!file) return;
-      let preset;
-      try { preset = JSON.parse(await file.text()); } catch { showToast('⚠ Invalid JSON'); return; }
-      if (!preset?.localStorage) { showToast('⚠ Not a valid preset'); return; }
-
-      // Restore localStorage settings
-      for (const [k,v] of Object.entries(preset.localStorage)) LS.set(k,v);
-      const cfg = LS.get('lastConfig'); if (cfg) S.config = cfg;
-      const theme = LS.get('theme'); if (theme) applyTheme(theme);
-
-      // Reconnect all handles from IDB in one go (requires user gesture — we're inside one)
-      await reconnectAllHandles();
-      if (S.vaultDirHandle) await loadFromVault();
-      renderAll();
-      renderEventsCard?.();
-      close();
-      showToast('✓ Preset loaded', 2000);
-    });
-    input.click();
   });
   // Theme segment
   ov.querySelectorAll('.theme-seg-btn').forEach(btn => {
@@ -5198,18 +5109,18 @@ function showReconnectBanner() {
   const area = document.getElementById('reconnect-area');
   const name = LS.get('vaultFolderName') || 'vault';
   area.innerHTML = `<div class="reconnect-banner">
-    <div class="rb-text">📁 ${name} needs access<div class="rb-sub">Tap once to reconnect all folders — won't ask again this session</div></div>
+    <div class="rb-text">📁 ${name} needs access<div class="rb-sub">Tap once to reconnect — won't ask again this session</div></div>
     <button class="reconnect-btn" id="rb-btn">Reconnect</button>
   </div>`;
   area.querySelector('#rb-btn').addEventListener('click', async () => {
-    const ok = await reconnectAllHandles();
-    document.getElementById('reconnect-area').innerHTML = '';
-    if (S.vaultDirHandle) {
+    const ok = await reconnectVault();
+    if (ok) {
       await loadFromVault();
       renderAll();
+      showToast('✓ Vault reconnected');
+    } else {
+      showToast('Could not reconnect — try Settings → Change Vault');
     }
-    renderEventsCard?.();
-    showToast(ok ? '✓ All folders reconnected' : '✓ Reconnected (some folders may need re-picking in Settings)');
   });
 }
 
@@ -5669,7 +5580,6 @@ async function boot() {
 
 boot();
 
-// Reset stale File System Access permission cache when app resumes from background
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     S._permGranted = { logTemplate: false, logOutput: false, events: false };
