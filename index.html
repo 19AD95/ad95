@@ -384,8 +384,6 @@ const S = {
   _pendingHandle: null,
   scheduleOpen: false,
   notifPermission: Notification.permission,
-  // Per-session permission cache — requestPermission only called once per handle
-  _permGranted: { logTemplate: false, logOutput: false, events: false },
 };
 
 const LS = {
@@ -398,47 +396,40 @@ const LS = {
 const IDB = (() => {
   let db = null;
   const open = () => new Promise((res,rej) => {
-    if (db) {
-      try { void db.objectStoreNames; res(db); return; } catch { db = null; }
-    }
+    if (db) { res(db); return; }
     const r = indexedDB.open('habit-tracker-v1', 1);
     r.onupgradeneeded = e => e.target.result.createObjectStore('kv');
-    r.onsuccess = e => {
-      db = e.target.result;
-      db.onclose = () => { db = null; };
-      db.onerror = () => { db = null; };
-      res(db);
-    };
+    r.onsuccess = e => { db = e.target.result; res(db); };
     r.onerror = () => rej(r.error);
   });
-  async function withRetry(fn) {
-    try { return await fn(await open()); }
-    catch(e) {
-      if (e && (e.name === 'InvalidStateError' || e.name === 'TransactionInactiveError')) {
-        db = null; return await fn(await open());
-      }
-      throw e;
-    }
-  }
   return {
-    set: (k,v) => withRetry(d => new Promise((res,rej) => {
-      const tx = d.transaction('kv','readwrite');
-      tx.objectStore('kv').put(v, k);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => rej(tx.error);
-    })),
-    get: (k) => withRetry(d => new Promise((res,rej) => {
-      const tx = d.transaction('kv','readonly');
-      const r = tx.objectStore('kv').get(k);
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    })),
-    del: (k) => withRetry(d => new Promise((res,rej) => {
-      const tx = d.transaction('kv','readwrite');
-      tx.objectStore('kv').delete(k);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => rej(tx.error);
-    })),
+    set: async (k,v) => {
+      const d = await open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('kv','readwrite');
+        tx.objectStore('kv').put(v, k);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    },
+    get: async (k) => {
+      const d = await open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('kv','readonly');
+        const r = tx.objectStore('kv').get(k);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+    },
+    del: async (k) => {
+      const d = await open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('kv','readwrite');
+        tx.objectStore('kv').delete(k);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    },
   };
 })();
 
@@ -484,17 +475,21 @@ async function restoreVaultHandle() {
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
+    // Validate the handle is usable — bad handles from old deployments throw here
     let perm;
-    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch {
-      await IDB.del('vaultHandle'); LS.del('vaultFolderName'); return 'none';
-    }
-    if (perm === 'granted') { S.vaultDirHandle = dh; return 'granted'; }
-    // Try requestPermission directly — Chrome grants silently if it remembers the folder.
-    // Only shows a prompt if the browser has truly forgotten (rare after full restart).
     try {
-      perm = await dh.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') { S.vaultDirHandle = dh; return 'granted'; }
-    } catch {}
+      perm = await dh.queryPermission({ mode: 'readwrite' });
+    } catch {
+      // Handle is corrupt/stale (e.g. from a different origin/deployment)
+      // Clear it so user gets a clean first-run setup
+      await IDB.del('vaultHandle');
+      LS.del('vaultFolderName');
+      return 'none';
+    }
+    if (perm === 'granted') {
+      S.vaultDirHandle = dh;
+      return 'granted';
+    }
     S._pendingHandle = dh;
     return 'needs-grant';
   } catch { return 'none'; }
@@ -3627,10 +3622,8 @@ async function restoreLogTemplateHandle() {
     if (!fh) return;
     let perm;
     try { perm = await fh.queryPermission({ mode: 'read' }); } catch { return; }
-    if (perm !== 'granted') {
-      try { perm = await fh.requestPermission({ mode: 'read' }); } catch {}
-    }
-    if (perm === 'granted') S.logTemplateHandle = fh;
+    // Store handle regardless — permission will be re-requested on first use (inside click handler)
+    S.logTemplateHandle = fh;
   } catch {}
 }
 
@@ -3638,12 +3631,8 @@ async function restoreLogOutputHandle() {
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
-    let perm;
-    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm !== 'granted') {
-      try { perm = await dh.requestPermission({ mode: 'readwrite' }); } catch {}
-    }
-    if (perm === 'granted') S.logOutputDirHandle = dh;
+    try { await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    S.logOutputDirHandle = dh;
   } catch {}
 }
 
@@ -3671,7 +3660,6 @@ async function pickEventsFolder() {
     S.eventsDirHandle = dh;
     await IDB.set('eventsHandle', dh);
     LS.set('eventsFolderName', dh.name);
-    S._permGranted.events = true;
     showToast(`✓ Events folder: ${dh.name}`);
     return true;
   } catch { return false; }
@@ -3681,23 +3669,15 @@ async function restoreEventsHandle() {
   try {
     const dh = await IDB.get('eventsHandle');
     if (!dh) return;
-    let perm;
-    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm !== 'granted') {
-      try { perm = await dh.requestPermission({ mode: 'readwrite' }); } catch {}
-    }
-    if (perm === 'granted') { S.eventsDirHandle = dh; S._permGranted.events = true; }
+    S.eventsDirHandle = dh;
   } catch {}
 }
 
 async function loadEvents() {
   if (!S.eventsDirHandle) return [];
   try {
-    if (!S._permGranted.events) {
-      const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
-      if (p !== 'granted') return [];
-      S._permGranted.events = true;
-    }
+    const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
+    if (p !== 'granted') return [];
     const events = [];
     for await (const entry of S.eventsDirHandle.values()) {
       if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue;
@@ -3727,11 +3707,8 @@ async function loadEvents() {
 
 async function saveEvent(ev, oldFilename) {
   if (!S.eventsDirHandle) { showToast('No events folder set'); return false; }
-  if (!S._permGranted.events) {
-    const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
-    if (p !== 'granted') { showToast('Permission denied'); return false; }
-    S._permGranted.events = true;
-  }
+  const p = await S.eventsDirHandle.requestPermission({ mode: 'readwrite' });
+  if (p !== 'granted') { showToast('Permission denied'); return false; }
   const slug = ev.title.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 30);
   const filename = oldFilename || `${ev.date.replace(/-/g,'')}_${slug}.md`;
   const content = `---\ntitle: ${JSON.stringify(ev.title)}\ndate: ${ev.date}\n${ev.time ? 'time: ' + ev.time + '\n' : ''}${ev.note ? 'note: ' + JSON.stringify(ev.note) + '\n' : ''}---\n${ev.note || ''}`;
@@ -3951,11 +3928,8 @@ async function writeLogEntry(logText) {
 
   let templateText;
   try {
-    if (!S._permGranted.logTemplate) {
-      const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
-      if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
-      S._permGranted.logTemplate = true;
-    }
+    const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') { showToast('Permission denied for log template'); return false; }
     const file = await S.logTemplateHandle.getFile();
     templateText = await file.text();
   } catch(e) {
@@ -4011,11 +3985,8 @@ async function writeLogEntry(logText) {
     return false;
   }
   try {
-    if (!S._permGranted.logOutput) {
-      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
-      S._permGranted.logOutput = true;
-    }
+    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') { showToast('Permission denied for log output folder'); return false; }
 
     // ── Flexible output path from user format setting ──
     // Default: {{date:YYYY}}/{{date:YYYYMMDDHHmmss}}
@@ -4232,11 +4203,8 @@ async function loadAllLogs() {
     _logsLoading = false; return;
   }
   try {
-    if (!S._permGranted.logOutput) {
-      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
-      S._permGranted.logOutput = true;
-    }
+    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') { _logsSetEmpty('Permission denied.'); _logsLoading = false; return; }
   } catch { _logsSetEmpty('Permission error.'); _logsLoading = false; return; }
 
   const entries = [];
@@ -4601,20 +4569,10 @@ function _openLogEditor(log) {
       }
 
       // ── Write to disk ──
-      let fh = log.handle;
-      if (!fh) {
-        const dir = await _getLogParentDir(log);
-        const ok = await _ensureWritePermission(dir);
-        if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
-        fh = await dir.getFileHandle(log.filename, { create: false });
-      } else {
-        let perm;
-        try { perm = await fh.queryPermission({ mode: 'readwrite' }); } catch { perm = 'prompt'; }
-        if (perm !== 'granted') {
-          try { perm = await fh.requestPermission({ mode: 'readwrite' }); } catch { perm = 'denied'; }
-        }
-        if (perm !== 'granted') { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
-      }
+      const dir = await _getLogParentDir(log);
+      const ok = await _ensureWritePermission(dir);
+      if (!ok) { showToast('Permission denied'); btn.disabled = false; btn.textContent = '✓ Save Changes'; return; }
+      const fh = await dir.getFileHandle(log.filename, { create: false });
       const w = await fh.createWritable();
       await w.write(newFullText);
       await w.close();
@@ -4835,14 +4793,6 @@ function showSettings() {
       <button class="btn btn-ghost" style="width:100%" id="s-install">📲 Install Guide</button>
     </div>
     <div class="s-section">
-      <div class="s-section-title">Dev Preset</div>
-      <div class="s-sub" style="margin-bottom:8px">Saves your folder names. Import reconnects them from browser memory — no folder picking needed.</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" style="flex:1" id="s-preset-export">⬇ Export Preset</button>
-        <button class="btn btn-ghost" style="flex:1" id="s-preset-import">⬆ Import Preset</button>
-      </div>
-    </div>
-    <div class="s-section">
       <div class="s-section-title">Danger Zone</div>
       <button class="btn btn-ghost" style="width:100%;color:var(--danger);border-color:rgba(255,68,102,.3)" id="s-clear">Clear All Data &amp; Reset</button>
     </div>
@@ -4891,57 +4841,6 @@ function showSettings() {
       localStorage.clear();
       location.reload();
     }
-  });
-
-  ov.querySelector('#s-preset-export').addEventListener('click', () => {
-    const preset = {
-      _version: 1,
-      _exported: new Date().toISOString(),
-      vaultFolderName:     LS.get('vaultFolderName')     || null,
-      logTemplateName:     LS.get('logTemplateName')     || null,
-      logOutputFolderName: LS.get('logOutputFolderName') || null,
-      eventsFolderName:    LS.get('eventsFolderName')    || null,
-      theme:               LS.get('theme')               || null,
-      logOutputFormat:     LS.get('logOutputFormat')     || null,
-      lastConfig:          LS.get('lastConfig')          || null,
-      pomoSettings:        LS.get('pomoSettings')        || null,
-    };
-    const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'vaultdex-preset.json' });
-    a.click(); URL.revokeObjectURL(a.href);
-    showToast('✓ Preset exported');
-  });
-
-  ov.querySelector('#s-preset-import').addEventListener('click', () => {
-    const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' });
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0]; if (!file) return;
-      let preset;
-      try { preset = JSON.parse(await file.text()); } catch { showToast('⚠ Invalid JSON'); return; }
-      if (!preset?._version) { showToast('⚠ Not a valid preset'); return; }
-
-      // Restore display labels
-      if (preset.vaultFolderName)     LS.set('vaultFolderName',     preset.vaultFolderName);
-      if (preset.logTemplateName)     LS.set('logTemplateName',     preset.logTemplateName);
-      if (preset.logOutputFolderName) LS.set('logOutputFolderName', preset.logOutputFolderName);
-      if (preset.eventsFolderName)    LS.set('eventsFolderName',    preset.eventsFolderName);
-      if (preset.theme)               { LS.set('theme', preset.theme); applyTheme(preset.theme); }
-      if (preset.logOutputFormat)     LS.set('logOutputFormat',     preset.logOutputFormat);
-      if (preset.lastConfig)          { LS.set('lastConfig', preset.lastConfig); S.config = preset.lastConfig; }
-      if (preset.pomoSettings)        LS.set('pomoSettings',        preset.pomoSettings);
-
-      // Re-grant all handles from IDB — we're inside a user gesture (file picker)
-      // so requestPermission() is allowed here without a separate tap
-      await restoreVaultHandle();
-      await restoreLogTemplateHandle();
-      await restoreLogOutputHandle();
-      await restoreEventsHandle();
-
-      renderAll();
-      close();
-      showToast('✓ Preset loaded');
-    });
-    input.click();
   });
   // Theme segment
   ov.querySelectorAll('.theme-seg-btn').forEach(btn => {
@@ -5638,12 +5537,6 @@ async function boot() {
 }
 
 boot();
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    S._permGranted = { logTemplate: false, logOutput: false, events: false };
-  }
-});
 
 // Prevent pull-to-refresh (overscroll-behavior covers Chrome; this covers iOS Safari)
 document.addEventListener('touchmove', e => {
