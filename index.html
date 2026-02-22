@@ -4835,6 +4835,14 @@ function showSettings() {
       <button class="btn btn-ghost" style="width:100%" id="s-install">📲 Install Guide</button>
     </div>
     <div class="s-section">
+      <div class="s-section-title">Dev Preset</div>
+      <div class="s-sub" style="margin-bottom:8px">Saves your folder names. Import reconnects them from browser memory — no folder picking needed.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" id="s-preset-export">⬇ Export Preset</button>
+        <button class="btn btn-ghost" style="flex:1" id="s-preset-import">⬆ Import Preset</button>
+      </div>
+    </div>
+    <div class="s-section">
       <div class="s-section-title">Danger Zone</div>
       <button class="btn btn-ghost" style="width:100%;color:var(--danger);border-color:rgba(255,68,102,.3)" id="s-clear">Clear All Data &amp; Reset</button>
     </div>
@@ -4883,6 +4891,57 @@ function showSettings() {
       localStorage.clear();
       location.reload();
     }
+  });
+
+  ov.querySelector('#s-preset-export').addEventListener('click', () => {
+    const preset = {
+      _version: 1,
+      _exported: new Date().toISOString(),
+      vaultFolderName:     LS.get('vaultFolderName')     || null,
+      logTemplateName:     LS.get('logTemplateName')     || null,
+      logOutputFolderName: LS.get('logOutputFolderName') || null,
+      eventsFolderName:    LS.get('eventsFolderName')    || null,
+      theme:               LS.get('theme')               || null,
+      logOutputFormat:     LS.get('logOutputFormat')     || null,
+      lastConfig:          LS.get('lastConfig')          || null,
+      pomoSettings:        LS.get('pomoSettings')        || null,
+    };
+    const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'vaultdex-preset.json' });
+    a.click(); URL.revokeObjectURL(a.href);
+    showToast('✓ Preset exported');
+  });
+
+  ov.querySelector('#s-preset-import').addEventListener('click', () => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' });
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0]; if (!file) return;
+      let preset;
+      try { preset = JSON.parse(await file.text()); } catch { showToast('⚠ Invalid JSON'); return; }
+      if (!preset?._version) { showToast('⚠ Not a valid preset'); return; }
+
+      // Restore display labels
+      if (preset.vaultFolderName)     LS.set('vaultFolderName',     preset.vaultFolderName);
+      if (preset.logTemplateName)     LS.set('logTemplateName',     preset.logTemplateName);
+      if (preset.logOutputFolderName) LS.set('logOutputFolderName', preset.logOutputFolderName);
+      if (preset.eventsFolderName)    LS.set('eventsFolderName',    preset.eventsFolderName);
+      if (preset.theme)               { LS.set('theme', preset.theme); applyTheme(preset.theme); }
+      if (preset.logOutputFormat)     LS.set('logOutputFormat',     preset.logOutputFormat);
+      if (preset.lastConfig)          { LS.set('lastConfig', preset.lastConfig); S.config = preset.lastConfig; }
+      if (preset.pomoSettings)        LS.set('pomoSettings',        preset.pomoSettings);
+
+      // Re-grant all handles from IDB — we're inside a user gesture (file picker)
+      // so requestPermission() is allowed here without a separate tap
+      await restoreVaultHandle();
+      await restoreLogTemplateHandle();
+      await restoreLogOutputHandle();
+      await restoreEventsHandle();
+
+      renderAll();
+      close();
+      showToast('✓ Preset loaded');
+    });
+    input.click();
   });
   // Theme segment
   ov.querySelectorAll('.theme-seg-btn').forEach(btn => {
