@@ -380,6 +380,7 @@ const S = {
   logDirHandle: null,
   logTemplateHandle: null,
   logOutputDirHandle: null,
+  _pendingLogOutputHandle: null,
   eventsDirHandle: null,
   _pendingHandle: null,
   scheduleOpen: false,
@@ -3687,12 +3688,33 @@ async function restoreLogOutputHandle() {
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
-    // Always restore the handle — permission is requested lazily inside write operations
-    // (mirrors how writeHabitData works with S.vaultDirHandle)
-    S.logOutputDirHandle = dh;
-    // Eagerly try to re-grant if already permitted — no-op if it needs a user gesture
-    try { await dh.requestPermission({ mode: 'readwrite' }); } catch {}
+    // Only set handle if permission is already granted (no user gesture needed)
+    // Mirrors restoreVaultHandle — never call requestPermission at boot without gesture
+    let perm;
+    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
+    if (perm === 'granted') {
+      S.logOutputDirHandle = dh;
+    } else {
+      // Store as pending — will be re-granted when user taps Log button
+      S._pendingLogOutputHandle = dh;
+    }
   } catch {}
+}
+
+// Called from the log popup button — re-grants permission with user gesture if needed
+async function ensureLogOutputPermission() {
+  if (S.logOutputDirHandle) return true; // already live
+  const dh = S._pendingLogOutputHandle;
+  if (!dh) return false;
+  try {
+    const perm = await dh.requestPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      S.logOutputDirHandle = dh;
+      S._pendingLogOutputHandle = null;
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 async function pickLogOutputFolder() {
@@ -3982,8 +4004,6 @@ async function writeLogEntry(logText) {
 
   // ── Build content ──
   let newContent;
-
-  // Try template first
   if (S.logTemplateHandle) {
     try {
       const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
@@ -3997,15 +4017,14 @@ async function writeLogEntry(logText) {
         if (fmMatch) {
           const [, open, yaml, close, body] = fmMatch;
           let yamlLines = yaml.split('\n');
-          // Remove existing log: and tags: blocks
           const logIdx = yamlLines.findIndex(l => l.startsWith('log:'));
           if (logIdx !== -1) yamlLines[logIdx] = `log: ${sanitizedLog}`;
           else yamlLines.push(`log: ${sanitizedLog}`);
           const tagsIdx = yamlLines.findIndex(l => l.trim() === 'tags:');
           if (tagsIdx !== -1) {
-            let end2 = tagsIdx + 1;
-            while (end2 < yamlLines.length && /^\s+-/.test(yamlLines[end2])) end2++;
-            yamlLines.splice(tagsIdx, end2 - tagsIdx);
+            let ei = tagsIdx + 1;
+            while (ei < yamlLines.length && /^\s+-/.test(yamlLines[ei])) ei++;
+            yamlLines.splice(tagsIdx, ei - tagsIdx);
           }
           yamlLines.push('tags:', ...finalTags.map(t => `  - ${t}`));
           newContent = open + yamlLines.join('\n') + close + body;
@@ -4013,8 +4032,6 @@ async function writeLogEntry(logText) {
       }
     } catch(e) { console.warn('Template read failed:', e); }
   }
-
-  // Fallback: minimal YAML
   if (!newContent) {
     newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t => `  - ${t}`).join('\n')}\n---\n`;
   }
@@ -4028,7 +4045,7 @@ async function writeLogEntry(logText) {
   const subDirs = pathParts.filter(Boolean);
   const id = ts + '_' + Math.random().toString(36).slice(2, 6);
 
-  // ── Save to IDB ──
+  // ── Save to IDB (always) ──
   const idbEntry = {
     id,
     filename: baseFilename,
@@ -4041,21 +4058,14 @@ async function writeLogEntry(logText) {
   };
   try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB save failed:', e); }
 
-  // ── Write to folder ──
+  // ── Write to folder — mirrors writeHabitData pattern exactly ──
   if (!S.logOutputDirHandle) {
-    showToast('⚠ No output folder set — log saved in app only');
+    showToast('\u2713 Log saved (no output folder set)');
     return true;
   }
 
   try {
-    // Request permission
-    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') {
-      showToast('⚠ Folder permission denied — log saved in app only');
-      return true;
-    }
-
-    // Navigate / create subdirectories
+    // Navigate / create subdirectories — same as writeHabitData does with getDataDir
     let dir = S.logOutputDirHandle;
     for (const seg of subDirs) {
       dir = await dir.getDirectoryHandle(seg, { create: true });
@@ -4073,25 +4083,26 @@ async function writeLogEntry(logText) {
       filename = baseFilename.slice(0, dot) + '_' + suffix + baseFilename.slice(dot);
     }
 
-    // Write file
+    // Write — exactly like writeHabitData: getFileHandle -> createWritable -> write -> close
     const fh = await dir.getFileHandle(filename, { create: true });
-    const writable = await fh.createWritable({ keepExistingData: false });
-    await writable.write(newContent);
-    await writable.close();
+    const w = await fh.createWritable();
+    await w.write(newContent);
+    await w.close();
 
-    // Update IDB with actual filename
+    // Update IDB with actual path
     idbEntry.filename = filename;
     idbEntry.path = [...subDirs, filename].join('/');
     await IDBLogs.save(idbEntry);
 
+    showToast('\u2713 Log saved');
   } catch(e) {
-    console.error('Folder write failed:', e);
-    showToast('⚠ Folder write failed: ' + (e.message || String(e)));
-    return true;
+    console.error('Log folder write failed:', e);
+    showToast('\u26a0 Folder write failed: ' + (e.message || String(e)));
   }
 
   return true;
 }
+
 
 // ── LOG TEXT POPUP ───────────────────────────────────────────────────────────
 function showLogTextPopup() {
@@ -5288,7 +5299,7 @@ function buildSkeleton() {
 
 
   // ── Log text button ──
-  document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
+  document.getElementById('log-text-btn')?.addEventListener('click', async () => { await ensureLogOutputPermission(); showLogTextPopup(); });
   document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
   document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
