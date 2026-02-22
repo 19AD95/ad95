@@ -3688,24 +3688,27 @@ async function restoreLogOutputHandle() {
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
-    // Only set handle if permission is already granted (no user gesture needed)
-    // Mirrors restoreVaultHandle — never call requestPermission at boot without gesture
-    let perm;
-    try { perm = await dh.queryPermission({ mode: 'readwrite' }); } catch { return; }
-    if (perm === 'granted') {
-      S.logOutputDirHandle = dh;
-    } else {
-      // Store as pending — will be re-granted when user taps Log button
-      S._pendingLogOutputHandle = dh;
-    }
+    // Store as pending — permission will be re-granted on first user gesture (log button tap)
+    S._pendingLogOutputHandle = dh;
   } catch {}
 }
 
-// Called from the log popup button — re-grants permission with user gesture if needed
+// Called from the log popup button (user gesture) — always re-requests permission fresh
+// If the handle is stale, clears it and makes user re-pick the folder
 async function ensureLogOutputPermission() {
-  if (S.logOutputDirHandle) return true; // already live
+  // Already live this session
+  if (S.logOutputDirHandle) return true;
+
   const dh = S._pendingLogOutputHandle;
-  if (!dh) return false;
+
+  // No handle at all — prompt to pick
+  if (!dh) {
+    showToast('Pick your log output folder first');
+    await pickLogOutputFolder();
+    return !!S.logOutputDirHandle;
+  }
+
+  // Try to re-grant permission (safe inside user gesture)
   try {
     const perm = await dh.requestPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
@@ -3713,16 +3716,17 @@ async function ensureLogOutputPermission() {
       S._pendingLogOutputHandle = null;
       return true;
     }
+    // Permission prompt dismissed / denied
+    return false;
   } catch(e) {
-    // Stale handle — clear it so user gets prompted to re-pick
-    const isStale = e.message && e.message.includes('state had changed');
-    if (isStale) {
-      S._pendingLogOutputHandle = null;
-      await IDB.del('logOutputHandle').catch(()=>{});
-      LS.del('logOutputFolderName');
-    }
+    // Stale handle — clear everything and make user re-pick
+    console.warn('Log output handle stale, clearing:', e.message);
+    S._pendingLogOutputHandle = null;
+    await IDB.del('logOutputHandle').catch(() => {});
+    LS.del('logOutputFolderName');
+    showToast('Log folder reset — please re-select it in Settings');
+    return false;
   }
-  return false;
 }
 
 async function pickLogOutputFolder() {
@@ -4105,35 +4109,12 @@ async function writeLogEntry(logText) {
     showToast('\u2713 Log saved');
   } catch(e) {
     console.error('Log folder write failed:', e);
-    // Stale handle — the stored folder handle is no longer valid.
-    // Force user to re-pick the folder, then retry the write.
-    const isStale = e.message && e.message.includes('state had changed');
-    if (isStale) {
-      showToast('\u26a0 Log folder disconnected — please re-select it');
-      S.logOutputDirHandle = null;
-      S._pendingLogOutputHandle = null;
-      await IDB.del('logOutputHandle').catch(()=>{});
-      LS.del('logOutputFolderName');
-      // Prompt re-pick immediately (we're inside a user-gesture chain)
-      const ok = await pickLogOutputFolder();
-      if (ok) {
-        // Retry the write with the fresh handle
-        try {
-          let dir2 = S.logOutputDirHandle;
-          for (const seg of subDirs) dir2 = await dir2.getDirectoryHandle(seg, { create: true });
-          const fh2 = await dir2.getFileHandle(idbEntry.filename, { create: true });
-          const w2 = await fh2.createWritable();
-          await w2.write(newContent);
-          await w2.close();
-          showToast('\u2713 Log saved');
-        } catch(e2) {
-          console.error('Retry write failed:', e2);
-          showToast('\u26a0 Write failed after reconnect');
-        }
-      }
-    } else {
-      showToast('\u26a0 Write failed: ' + (e.name || 'error'));
-    }
+    // Any write error — treat handle as stale, clear it, let user re-pick via Settings
+    S.logOutputDirHandle = null;
+    S._pendingLogOutputHandle = null;
+    await IDB.del('logOutputHandle').catch(() => {});
+    LS.del('logOutputFolderName');
+    showToast('\u26a0 Log folder lost — re-select in Settings \u2699');
   }
 
   return true;
@@ -4751,19 +4732,11 @@ function _openLogEditor(log) {
         await writeToFolder();
       } catch(e) {
         console.error('Folder log edit write failed:', e);
-        const isStale = e.message && e.message.includes('state had changed');
-        if (isStale) {
-          showToast('\u26a0 Log folder disconnected — please re-select it');
-          S.logOutputDirHandle = null;
-          S._pendingLogOutputHandle = null;
-          await IDB.del('logOutputHandle').catch(()=>{});
-          LS.del('logOutputFolderName');
-          await pickLogOutputFolder();
-          // Retry
-          try { await writeToFolder(); } catch(e2) { showToast('\u26a0 Write failed after reconnect'); }
-        } else {
-          showToast('\u26a0 Edit write failed: ' + (e.name || 'error'));
-        }
+        S.logOutputDirHandle = null;
+        S._pendingLogOutputHandle = null;
+        await IDB.del('logOutputHandle').catch(() => {});
+        LS.del('logOutputFolderName');
+        showToast('\u26a0 Log folder lost — re-select in Settings \u2699');
       }
 
       // ── Update in-memory cache ──
@@ -5347,7 +5320,16 @@ function buildSkeleton() {
 
 
   // ── Log text button ──
-  document.getElementById('log-text-btn')?.addEventListener('click', async () => { await ensureLogOutputPermission(); showLogTextPopup(); });
+  document.getElementById('log-text-btn')?.addEventListener('click', async () => {
+    // Re-grant or re-pick folder on every tap (user gesture required)
+    const ready = await ensureLogOutputPermission();
+    // If still no handle after ensure, open picker directly
+    if (!S.logOutputDirHandle) {
+      const picked = await pickLogOutputFolder();
+      if (!picked) return;
+    }
+    showLogTextPopup();
+  });
   document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
   document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
