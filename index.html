@@ -4061,7 +4061,7 @@ async function writeLogEntry(logText) {
         }
         const fh = await dir.getFileHandle(filename, { create: true });
         const w = await fh.createWritable();
-        await w.write(new Blob([newContent], { type: 'text/plain' }));
+        await w.write(newContent);
         await w.close();
         // Update IDB entry with the actual filename used
         idbEntry.filename = filename;
@@ -4666,7 +4666,7 @@ function _openLogEditor(log) {
           }
           if (perm === 'granted') {
             const w = await log.handle.createWritable();
-            await w.write(new Blob([newFullText], { type: 'text/plain' }));
+            await w.write(newFullText);
             await w.close();
           }
         } catch(e) { console.warn('Folder log edit write failed (IDB updated):', e.message); }
@@ -4681,7 +4681,7 @@ function _openLogEditor(log) {
             for (const seg of pathParts) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
             const fh = await dir.getFileHandle(filename, { create: true });
             const w = await fh.createWritable();
-            await w.write(new Blob([newFullText], { type: 'text/plain' }));
+            await w.write(newFullText);
             await w.close();
           }
         } catch(e) { console.warn('Folder write for IDB log failed:', e.message); }
