@@ -67,9 +67,9 @@
 
   /* habits */
   .habits-grid{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:4px 2px 8px}
-  .habit-col{display:flex;flex-direction:row;align-items:center;gap:5px;cursor:pointer}
-  .habit-bar-track{width:6px;height:52px;background:var(--bg3);border-radius:4px;position:relative;overflow:hidden;border:1px solid var(--border);flex-shrink:0}
-  .habit-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;background:linear-gradient(to top,var(--accent),rgba(0,255,136,.5));transition:height .4s cubic-bezier(.34,1.56,.64,1)}
+  .habit-col{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+  .habit-bar-track{width:44px;height:5px;background:var(--bg3);border-radius:3px;position:relative;overflow:hidden;border:1px solid var(--border);flex-shrink:0}
+  .habit-bar-fill{position:absolute;top:0;left:0;bottom:0;border-radius:3px;background:linear-gradient(to right,var(--accent),rgba(0,255,136,.6));transition:width .4s cubic-bezier(.34,1.56,.64,1)}
   .habit-bar-fill.complete{background:var(--accent)}
   .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2);position:relative;flex-shrink:0}
   .habit-icon.complete{border-color:rgba(0,255,136,.4);background:rgba(0,255,136,.06)}
@@ -1082,7 +1082,7 @@ function renderCountdown() {
   const todaySched = getTodaySchedule();
   if (!todaySched.length) {
     left.innerHTML = `<div class="cw"><div class="empty-state" style="padding:8px 0;font-size:13px">No schedule today</div></div>`;
-    renderEventPanel(); return;
+    return;
   }
   for (const idx in S.snooze) {
     const until = S.snooze[idx];
@@ -1092,26 +1092,26 @@ function renderCountdown() {
         <div class="ca" style="margin-top:8px">${item?.activity||''}</div>
         <div class="cm"><span class="cl">Resumes ${new Date(until).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
         <span class="ct" id="snooze-timer">${fmtMs(until-Date.now())}</span></div></div>`;
-      renderEventPanel(); return;
+      return;
     }
   }
   const {cur,next} = getCurNext();
   if (cur===-1 && next===-1) {
     left.innerHTML = `<div class="cw"><div style="font-size:13px;color:var(--accent);font-family:var(--font-mono)">✨ All done!</div></div>`;
-    renderEventPanel(); return;
+    return;
   }
   if (cur === -1) {
     const ni = todaySched[next]; const rem = schedDate(ni.time) - Date.now();
     left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">Up next: ${ni.activity}</div>
       <div class="cm"><span class="cl">Starts in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
       <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:0%"></div></div></div>`;
-    renderEventPanel(); return;
+    return;
   }
   const ci = todaySched[cur];
   if (next === -1) {
     left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
       <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-top:4px">✨ Final activity</div></div>`;
-    renderEventPanel(); return;
+    return;
   }
   const ni = todaySched[next], rem = schedDate(ni.time) - Date.now();
   const span = schedDate(ni.time) - schedDate(ci.time);
@@ -1119,7 +1119,6 @@ function renderCountdown() {
   left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
     <div class="cm"><span class="cl">Next: ${ni.time}</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
     <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div></div>`;
-  renderEventPanel();
 }
 
 // ── RENDER — EVENT PANEL (right side of Now card) ──────────────────────────
@@ -1691,7 +1690,7 @@ function renderHabitBars() {
       const isBoolHabit = cfg.type === 'incremental' && mv === 1 && (cfg.increment||1) === 1;
       const barPct = dv === 0 ? 0 : Math.max(4, (dv / mv) * 100);
       col.innerHTML = `
-        <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="height:${barPct}%"></div></div>
+        <div class="habit-bar-track"><div class="habit-bar-fill${complete ? ' complete' : ''}" style="width:${barPct}%"></div></div>
         <div class="habit-icon${complete ? ' complete' : ''}" data-key="${key}">${cfg.icon}${complete ? `<span style="position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--bg);font-weight:900;border:1.5px solid var(--bg2)">✓</span>` : ''}</div>`;
 
       const iconEl = col.querySelector('.habit-icon');
@@ -2339,9 +2338,9 @@ function renderScheduledTab(el) {
   let multiSelectMode = false;
   let multiSelectedDates = new Set();
 
-  // ── TOP: Calendar (top ~50% of screen) ──
+  // ── TOP: Calendar (shrink-to-fit content) ──
   const calBox = document.createElement('div');
-  calBox.style.cssText = 'flex:0 0 50%;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:10px 12px 8px;overflow:hidden;min-height:0';
+  calBox.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:8px 10px 6px;overflow:hidden';
   wrap.appendChild(calBox);
 
   // ── BOTTOM: Event details panel (bottom ~50% of screen) ──
@@ -2362,14 +2361,14 @@ function renderScheduledTab(el) {
 
     // Month nav row
     const navRow = document.createElement('div');
-    navRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:4px';
+    navRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:4px';
     const mLabel = document.createElement('div');
-    mLabel.style.cssText = 'font-size:13px;font-weight:800;font-family:var(--font-mono)';
+    mLabel.style.cssText = 'font-size:12px;font-weight:800;font-family:var(--font-mono)';
     const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     mLabel.textContent = `${mNames[_calViewMonth]} ${_calViewYear}`;
     const prevBtn = document.createElement('button');
     prevBtn.innerHTML = '‹';
-    prevBtn.style.cssText = 'width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0';
+    prevBtn.style.cssText = 'width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0';
     const nextBtn = document.createElement('button');
     nextBtn.innerHTML = '›';
     nextBtn.style.cssText = prevBtn.style.cssText;
@@ -2382,7 +2381,7 @@ function renderScheduledTab(el) {
     // Multi-select toggle button (inline with nav)
     const msBtn = document.createElement('button');
     msBtn.innerHTML = multiSelectMode ? '✕ Cancel' : '⊞ Multi';
-    msBtn.style.cssText = `padding:4px 8px;border-radius:6px;border:1px solid ${multiSelectMode?'rgba(255,68,102,.4)':'rgba(0,255,136,.3)'};background:${multiSelectMode?'rgba(255,68,102,.06)':'rgba(0,255,136,.05)'};color:${multiSelectMode?'var(--danger)':'var(--accent)'};font-size:9px;font-family:var(--font-mono);font-weight:700;cursor:pointer;white-space:nowrap`;
+    msBtn.style.cssText = `padding:3px 7px;border-radius:6px;border:1px solid ${multiSelectMode?'rgba(255,68,102,.4)':'rgba(0,255,136,.3)'};background:${multiSelectMode?'rgba(255,68,102,.06)':'rgba(0,255,136,.05)'};color:${multiSelectMode?'var(--danger)':'var(--accent)'};font-size:9px;font-family:var(--font-mono);font-weight:700;cursor:pointer;white-space:nowrap`;
     msBtn.addEventListener('click', () => {
       multiSelectMode = !multiSelectMode;
       if (!multiSelectMode) multiSelectedDates.clear();
@@ -2403,23 +2402,24 @@ function renderScheduledTab(el) {
     ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
       const h = document.createElement('div');
       h.textContent = d;
-      h.style.cssText = 'text-align:center;font-size:9px;font-family:var(--font-mono);color:var(--muted);font-weight:700';
+      h.style.cssText = 'text-align:center;font-size:8px;font-family:var(--font-mono);color:var(--muted);font-weight:700;padding:1px 0';
       dayHdrRow.appendChild(h);
     });
     calBox.appendChild(dayHdrRow);
 
-    // Days grid — fills remaining space in top half
+    // Days grid — fixed compact cells so full calendar always fits without overflow
     const daysGrid = document.createElement('div');
-    daysGrid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex:1;align-content:start';
+    daysGrid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:2px';
     const daysInMonth = new Date(_calViewYear, _calViewMonth+1, 0).getDate();
     const firstDay = new Date(_calViewYear, _calViewMonth, 1).getDay();
     for (let i=0;i<firstDay;i++) {
-      const b = document.createElement('div'); daysGrid.appendChild(b);
+      const b = document.createElement('div'); b.style.cssText='aspect-ratio:1'; daysGrid.appendChild(b);
     }
     for (let d=1; d<=daysInMonth; d++) {
       const mm = String(_calViewMonth+1).padStart(2,'0');
       const dd = String(d).padStart(2,'0');
       const iso = `${_calViewYear}-${mm}-${dd}`;
+      const isPast = iso < todayISO;
       const tasks = getScheduledItemsForDate(iso).filter(it=>it.repeat==='once'||it.repeat==='custom'||it.blockType==='scheduled');
       const heat = getHeatLevel(tasks.length);
       const isToday = iso === todayISO;
@@ -2427,20 +2427,22 @@ function renderScheduledTab(el) {
       const isMultiSel = multiSelectMode && multiSelectedDates.has(iso);
       const cell = document.createElement('div');
       cell.className = `cal-day cal-heat-${heat}${isToday?' today-ring':''}${isCalSel||isMultiSel?' selected-day':''}`;
-      cell.style.cssText = 'max-height:none;aspect-ratio:1;min-height:28px;max-height:38px';
-      const numEl = document.createElement('div'); numEl.className = 'cal-day-num'; numEl.style.fontSize='11px'; numEl.textContent = d;
+      cell.style.cssText = `aspect-ratio:1;min-height:0;max-height:none;border-radius:7px;${isPast?'opacity:0.28;cursor:default;pointer-events:none;':''}`;
+      const numEl = document.createElement('div'); numEl.className = 'cal-day-num'; numEl.style.fontSize='10px'; numEl.textContent = d;
       cell.appendChild(numEl);
       if (tasks.length > 0) { const dot=document.createElement('div'); dot.className='cal-day-dot'; cell.appendChild(dot); }
-      cell.addEventListener('click', () => {
-        if (multiSelectMode) {
-          if (multiSelectedDates.has(iso)) multiSelectedDates.delete(iso);
-          else multiSelectedDates.add(iso);
-          buildCalGrid();
-          showMultiSelectPanel();
-        } else {
-          _calSelectedISO = iso; buildCalGrid(); buildEventList();
-        }
-      });
+      if (!isPast) {
+        cell.addEventListener('click', () => {
+          if (multiSelectMode) {
+            if (multiSelectedDates.has(iso)) multiSelectedDates.delete(iso);
+            else multiSelectedDates.add(iso);
+            buildCalGrid();
+            showMultiSelectPanel();
+          } else {
+            _calSelectedISO = iso; buildCalGrid(); buildEventList();
+          }
+        });
+      }
       daysGrid.appendChild(cell);
     }
     calBox.appendChild(daysGrid);
@@ -2449,7 +2451,7 @@ function renderScheduledTab(el) {
     if (multiSelectMode && multiSelectedDates.size > 0) {
       const msAddBtn = document.createElement('button');
       msAddBtn.textContent = `＋ Add (${multiSelectedDates.size})`;
-      msAddBtn.style.cssText = 'width:100%;margin-top:4px;padding:5px;border-radius:7px;border:1px solid rgba(0,255,136,.4);background:rgba(0,255,136,.1);color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;flex-shrink:0';
+      msAddBtn.style.cssText = 'width:100%;margin-top:4px;padding:4px;border-radius:7px;border:1px solid rgba(0,255,136,.4);background:rgba(0,255,136,.1);color:var(--accent);font-size:10px;font-family:var(--font-mono);font-weight:700;cursor:pointer;flex-shrink:0';
       msAddBtn.addEventListener('click', () => {
         showMultiDateAddSheet(Array.from(multiSelectedDates).sort(), () => {
           multiSelectMode = false; multiSelectedDates.clear();
@@ -5559,10 +5561,7 @@ function buildSkeleton() {
         </div>
       </div>
       <div class="card-body" style="padding:0">
-        <div style="display:flex;min-height:0">
-          <div id="countdown-left" style="flex:1;min-width:0;padding:14px 16px 16px;border-right:1px solid var(--border)"></div>
-          <div id="countdown-event" style="width:120px;flex-shrink:0;padding:12px 10px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:4px;cursor:pointer" id="countdown-event"></div>
-        </div>
+        <div id="countdown-left" style="padding:14px 16px 16px"></div>
       </div>
     </div>
     <div class="card" id="card-log" style="animation-delay:.05s">
