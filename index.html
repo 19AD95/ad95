@@ -393,19 +393,15 @@
       <div class="header-date" id="header-date"></div>
     </div>
     <div class="header-actions">
+      <button class="pomo-btn" id="pomo-btn-header" title="Focus Timer" style="width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"><div class="pomo-dot"></div></button>
       <button class="icon-btn" id="btn-reload" title="Reload">↺</button>
       <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
     </div>
   </header>
   <div id="reconnect-area"></div>
   <div class="tabs-container">
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="0">Dashboard</button>
-      <button class="tab-btn" data-tab="1">Time Blocks</button>
-    </div>
     <div class="tab-panels" id="tab-panels">
-      <div class="tab-panel" id="main-content"></div>
-      <div class="tab-panel" id="schedule-tab"></div>
+      <div class="tab-panel active" id="main-content"></div>
     </div>
   </div>
 </div>
@@ -567,6 +563,7 @@ const VAULT_PATHS = {
   habitTracker: ['0 - Personal Space', 'Habit Tracker'],
   logOutput:    ['0 - Personal Space', 'Chrono Log', 'data'],
   events:       ['0 - Personal Space', 'Events'],
+  timeBlocks:   ['0 - Personal Space', 'Time Blocks'],
 };
 
 // Navigate (and optionally create) a chain of subdirectories from a root handle.
@@ -587,6 +584,12 @@ async function deriveSubHandles() {
     S.habitTrackerDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.habitTracker, true);
     S.logOutputDirHandle    = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
     S.eventsDirHandle       = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.events, true);
+    // Try multiple candidate paths for Time Blocks
+    S.timeBlocksDirHandle = null;
+    for (const p of [VAULT_PATHS.timeBlocks, ['Time Blocks'], ['time blocks'], ['TimeBlocks'], ['0 - Personal Space', 'time blocks']]) {
+      S.timeBlocksDirHandle = await _navSubDir(S.vaultDirHandle, p, false);
+      if (S.timeBlocksDirHandle) break;
+    }
     // Log template is a file inside logOutput dir
     if (S.logOutputDirHandle) {
       try {
@@ -678,37 +681,207 @@ async function loadFromVault() {
 async function loadTemplate() {
   if (!S.vaultDirHandle) return false;
   try {
-    // Search in Habit Tracker subfolder, fall back to vault root for backward compat
-    const searchDir = (await getDataDir()) || S.vaultDirHandle;
-    for await (const entry of searchDir.values()) {
-      if (entry.kind==='file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
+    // ── Load habit definitions from Habit Tracker folder ──
+    const htDir = (await getDataDir()) || S.vaultDirHandle;
+    let habitDefinitions = {};
+    let habitTracker = { enabled: true, snoozeOptions: [5, 10] };
+    for await (const entry of htDir.values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md') && !entry.name.match(/^\d{16}HT\.md$/)) {
         const file = await entry.getFile();
-        const text = await file.text();
+        const text = (await file.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        // Try new kebab-case format first (habit-definition:)
+        const newFmt = parseHabitTrackerMd(text);
+        if (newFmt && Object.keys(newFmt.habitDefinitions || {}).length) {
+          habitDefinitions = newFmt.habitDefinitions;
+          habitTracker = newFmt.habitTracker || habitTracker;
+          break;
+        }
+        // Fallback: try legacy camelCase format
         const cfg = parseMd(text);
-        if (cfg && cfg.schedule?.length) {
-          // Check if user has locally-edited the schedule more recently than the vault file
-          const lastEdit = LS.get('lastScheduleEdit') || 0;
-          const fileModified = file.lastModified || 0;
-          const cached = LS.get('lastConfig');
-
-          if (lastEdit > fileModified && cached?.schedule?.length) {
-            // Local edits are newer — preserve the local schedule but take habit definitions from vault
-            S.config = {
-              ...cfg,
-              schedule: cached.schedule,
-            };
-          } else {
-            S.config = cfg;
-            // Vault is the source of truth — clear local-edit timestamp
-            LS.del('lastScheduleEdit');
-          }
-          LS.set('lastConfig', S.config);
-          return true;
+        if (cfg && Object.keys(cfg.habitDefinitions || {}).length) {
+          habitDefinitions = cfg.habitDefinitions || habitDefinitions;
+          habitTracker = cfg.habitTracker || habitTracker;
+          break;
         }
       }
     }
-    return false;
+
+    // ── Load schedule from Time Blocks folder ──
+    // Try in order: cached handle → standard path → vault root (files directly in vault)
+    let tbDir = S.timeBlocksDirHandle;
+    if (!tbDir) {
+      // Try several candidate paths before falling back to vault root
+      const candidates = [
+        VAULT_PATHS.timeBlocks,                          // 0 - Personal Space/Time Blocks
+        ['Time Blocks'],                                  // directly under vault root
+        ['time blocks'],
+        ['TimeBlocks'],
+        ['0 - Personal Space', 'time blocks'],
+      ];
+      for (const path of candidates) {
+        tbDir = await _navSubDir(S.vaultDirHandle, path, false);
+        if (tbDir) { S.timeBlocksDirHandle = tbDir; break; }
+      }
+    }
+    let schedule = [];
+    console.log('[loadTemplate] tbDir resolved:', tbDir?.name || 'null');
+    if (tbDir) {
+      schedule = await loadScheduleFromTimeBlocksDir(tbDir);
+    }
+    // Fallback: scan vault root itself for time block files
+    if (!schedule.length) {
+      console.log('[loadTemplate] Falling back to vault root scan');
+      schedule = await loadScheduleFromTimeBlocksDir(S.vaultDirHandle);
+    }
+    console.log('[loadTemplate] Final schedule length:', schedule.length);
+
+    // Always use freshly loaded vault data; local edits are synced to vault immediately
+    S.config = { schedule, habitDefinitions, habitTracker };
+    LS.del('lastScheduleEdit');
+    LS.set('lastConfig', S.config);
+    return true;
   } catch(e) { console.error('loadTemplate:', e); return false; }
+}
+
+// Expand a parsed scheduled-event object (with _times[] and _dates[]) into
+// one schedule item per date, each carrying its own time.
+// If fewer times than dates, the last time is reused for remaining dates.
+// If no dates at all, creates a single item using the first time (or '9:00 AM').
+function _expandScheduledEvent(cur) {
+  const times  = cur._times  || [];
+  const dates  = cur._dates  || [];
+  const dur    = cur.duration;
+  const act    = cur.activity;
+  const baseId = cur._id;
+
+  // Helper: get time for index i (clamps to last entry)
+  const getTime = i => times.length === 0 ? '9:00 AM'
+                     : times[Math.min(i, times.length - 1)];
+
+  if (dates.length === 0) {
+    // No dates — create a floating item (will always show, legacy behaviour)
+    const item = { activity: act, blockType: 'scheduled', repeat: 'daily', _id: baseId, time: getTime(0) };
+    if (dur) item.duration = dur;
+    return [item];
+  }
+
+  return dates.map((date, i) => {
+    const item = {
+      _id: i === 0 ? baseId : genItemId(),
+      activity: act,
+      blockType: 'scheduled',
+      time: getTime(i),
+      repeat: 'once',
+      createdOn: date,
+    };
+    if (dur) item.duration = dur;
+    return item;
+  });
+}
+
+// Parse all 3 Time Block file types from the Time Blocks folder
+async function loadScheduleFromTimeBlocksDir(dir) {
+  const schedule = [];
+  const todayISO = new Date().toISOString().slice(0,10);
+  console.log('[TimeBlocks] Scanning dir:', dir?.name);
+  try {
+    for await (const entry of dir.values()) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue;
+      console.log('[TimeBlocks] Reading:', entry.name);
+      const raw = await (await entry.getFile()).text();
+      const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const fm = text.match(/^---\n([\s\S]+?)\n---/);
+      if (!fm) { console.log('[TimeBlocks]', entry.name, '— no frontmatter found'); continue; }
+      const yaml = fm[1];
+      console.log('[TimeBlocks]', entry.name, '— yaml keys:', yaml.split('\n').filter(l => /^\w/.test(l)).join(', '));
+
+      // ── Daily Routine ──
+      if (yaml.includes('daily-routine:')) {
+        const block = yaml.match(/daily-routine:\s*\n([\s\S]*?)(?=\n\w|$)/);
+        if (block) {
+          let cur = null;
+          for (const line of block[1].split('\n')) {
+            const tM = line.match(/^\s*-?\s*time:\s*['"]?(.+?)['"]?\s*$/);
+            const aM = line.match(/^\s+activity:\s*['"]?(.+?)['"]?\s*$/);
+            const dM = line.match(/^\s+duration:\s*(\d+)/);
+            if (tM) { if (cur?.activity) schedule.push(cur); cur = { time: tM[1].trim(), blockType: 'routine', repeat: 'daily', _id: genItemId() }; }
+            else if (aM && cur) cur.activity = aM[1].trim();
+            else if (dM && cur) cur.duration = parseInt(dM[1]);
+          }
+          if (cur?.activity) schedule.push(cur);
+        }
+      }
+
+      // ── Scheduled Event ──
+      if (yaml.includes('scheduled-event:')) {
+        const block = yaml.match(/scheduled-event:\s*\n([\s\S]*?)(?=\n\w|$)/);
+        if (block) {
+          let cur = null;
+          // Track which sub-list we're currently inside for the current item
+          let inTimesBlock = false;
+          let inDatesBlock = false;
+          for (const line of block[1].split('\n')) {
+            const aM  = line.match(/^\s*-?\s*activity:\s*['"]?(.+?)['"]?\s*$/);
+            const tM  = line.match(/^\s+time:\s*['"]?(.+?)['"]?\s*$/);   // legacy single time
+            const dM  = line.match(/^\s+duration:\s*(\d+)/);
+            // Sub-list headers (e.g. "    times:" / "    dates:")
+            const timesHdr  = line.match(/^\s+times:\s*$/);
+            const datesHdr  = line.match(/^\s+dates:\s*$/);
+            // List item inside a sub-block: "      - 'value'" or "      - 2026-01-01"
+            const subItem   = line.match(/^\s{4,}-\s*['"]?(.+?)['"]?\s*$/);
+            // Detect when we leave a sub-block (less indented non-empty line)
+            const isSubLine = /^\s{4}/.test(line) || line.trim() === '';
+
+            if (aM) {
+              // Push previous event
+              if (cur?.activity) {
+                const expandedItems = _expandScheduledEvent(cur);
+                expandedItems.forEach(i => schedule.push(i));
+              }
+              cur = { activity: aM[1].trim(), blockType: 'scheduled', _id: genItemId(), _times: [], _dates: [] };
+              inTimesBlock = false; inDatesBlock = false;
+            } else if (cur) {
+              if (timesHdr)       { inTimesBlock = true;  inDatesBlock = false; }
+              else if (datesHdr)  { inDatesBlock = true;  inTimesBlock = false; }
+              else if (tM)        { cur._times.push(tM[1].trim()); inTimesBlock = false; inDatesBlock = false; } // legacy "time: X"
+              else if (dM)        { cur.duration = parseInt(dM[1]); inTimesBlock = false; inDatesBlock = false; }
+              else if (subItem) {
+                const val = subItem[1].trim();
+                if (inTimesBlock) cur._times.push(val);
+                else if (inDatesBlock) cur._dates.push(val);
+              } else if (!isSubLine) {
+                // Non-indented line that isn't an activity = end of this event's block
+                inTimesBlock = false; inDatesBlock = false;
+              }
+            }
+          }
+          if (cur?.activity) {
+            const expandedItems = _expandScheduledEvent(cur);
+            expandedItems.forEach(i => schedule.push(i));
+          }
+        }
+      }
+
+      // ── Focused Work ──
+      if (yaml.includes('focused-work:')) {
+        const block = yaml.match(/focused-work:\s*\n([\s\S]*?)(?=\n\w|$)/);
+        if (block) {
+          let cur = null;
+          for (const line of block[1].split('\n')) {
+            const aM = line.match(/^\s*-?\s*activity:\s*['"]?(.+?)['"]?\s*$/);
+            const dM = line.match(/^\s+duration:\s*(\d+)/);
+            if (aM) { if (cur?.activity) schedule.push(cur); cur = { activity: aM[1].trim(), blockType: 'open', repeat: 'daily', time: '8:00 AM', _id: genItemId() }; }
+            else if (dM && cur) cur.duration = parseInt(dM[1]);
+          }
+          if (cur?.activity) schedule.push(cur);
+        }
+      }
+    }
+  } catch(e) { console.warn('[TimeBlocks] Error:', e.message); }
+  console.log('[TimeBlocks] Parsed', schedule.length, 'items:', schedule.map(s=>s.activity));
+  // Sort by time
+  try { schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
+  return schedule;
 }
 
 async function loadHabitDataFromFile() {
@@ -717,7 +890,7 @@ async function loadHabitDataFromFile() {
       const dataDir = await getDataDir();
       if (dataDir) {
         const fh = await dataDir.getFileHandle(todayFilename(), { create:false });
-        const text = await (await fh.getFile()).text();
+        const text = (await (await fh.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         const m = text.match(/^---\n([\s\S]+?)\n---/);
         if (m) {
           S.habitData = {};
@@ -744,7 +917,7 @@ async function writeHabitData() {
     let existingBody = '';
     try {
       const ef = await dataDir.getFileHandle(fn, { create:false });
-      const txt = await (await ef.getFile()).text();
+      const txt = (await (await ef.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const bm = txt.match(/^---\n[\s\S]+?\n---\n?([\s\S]*)/);
       if (bm) existingBody = bm[1].trimStart();
     } catch {}
@@ -757,6 +930,100 @@ async function writeHabitData() {
   } catch(e) {
     console.warn('Vault write silently failed (localStorage used):', e.message);
   }
+}
+
+
+// ── PARSE Habit Tracker.md (kebab-case format) ─────────────────────────────
+// Handles: habit-definition: and habit-tracker: keys
+function parseHabitTrackerMd(text) {
+  const fm = text.match(/^---\n([\s\S]+?)\n---/);
+  if (!fm) return null;
+  const yaml = fm[1];
+  const habitDefinitions = {};
+  let habitTracker = { enabled: true, snoozeOptions: [5, 10] };
+
+  try {
+    // Parse habit-definition block (find lines between habit-definition: and next top-level key)
+    const lines = yaml.split('\n');
+    let inDefBlock = false, inTrackerBlock = false;
+    let defLines = [], trackerLines = [];
+
+    for (const line of lines) {
+      if (/^habit-definition:\s*$/.test(line)) { inDefBlock = true; inTrackerBlock = false; continue; }
+      if (/^habit-tracker:\s*$/.test(line))    { inTrackerBlock = true; inDefBlock = false; continue; }
+      if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) { inDefBlock = false; inTrackerBlock = false; }
+      if (inDefBlock) defLines.push(line);
+      if (inTrackerBlock) trackerLines.push(line);
+    }
+
+    // Parse habit definitions from defLines
+    if (defLines.length) {
+      let key = null, def = null;
+      const pushDef = () => { if (key && def) habitDefinitions[key] = def; };
+      let inMessages = false, inChoices = false, curChoice = null;
+
+      for (const line of defLines) {
+        const keyM = line.match(/^  (\w+):\s*$/);
+        if (keyM) {
+          if (curChoice && def) def.choices.push(curChoice);
+          pushDef();
+          key = keyM[1]; def = { type: 'incremental', icon: '⭐', messages: {}, choices: [] };
+          inMessages = false; inChoices = false; curChoice = null;
+          continue;
+        }
+        if (!def) continue;
+
+        const typeM  = line.match(/^\s+type:\s+(\w+)/);
+        const iconM  = line.match(/^\s+icon:\s+(.+)/);
+        const maxM   = line.match(/^\s+maxValue:\s+(\d+)/);
+        const incrM  = line.match(/^\s+increment:\s+(\d+)/);
+        const msgHdr = line.match(/^\s+messages:\s*$/);
+        const chHdr  = line.match(/^\s+choices:\s*$/);
+
+        if (typeM)  { def.type = typeM[1].trim(); continue; }
+        if (iconM)  { def.icon = iconM[1].trim().replace(/\s*#.*$/, '').trim(); continue; }
+        if (maxM)   { def.maxValue = parseInt(maxM[1]); continue; }
+        if (incrM)  { def.increment = parseInt(incrM[1]); continue; }
+        if (msgHdr) { inMessages = true; inChoices = false; continue; }
+        if (chHdr)  { inChoices = true; inMessages = false; continue; }
+
+        if (inMessages) {
+          const mm = line.match(/^\s+(\w+):\s*['"]?(.+?)['"]?\s*$/);
+          if (mm) def.messages[isNaN(mm[1]) ? mm[1] : parseInt(mm[1])] = mm[2].trim();
+        }
+        if (inChoices) {
+          if (line.match(/^\s+-\s/)) { if (curChoice) def.choices.push(curChoice); curChoice = {}; }
+          if (curChoice) {
+            const vM = line.match(/value:\s*(\d+)/);
+            const lM = line.match(/label:\s*['"]?(.+?)['"]?\s*$/);
+            const mM = line.match(/message:\s*['"]?(.+?)['"]?\s*$/);
+            if (vM) curChoice.value = parseInt(vM[1]);
+            if (lM) curChoice.label = lM[1].trim();
+            if (mM) curChoice.message = mM[1].trim();
+          }
+        }
+      }
+      if (curChoice && def) def.choices.push(curChoice);
+      pushDef();
+    }
+
+    // Parse habit-tracker config from trackerLines
+    if (trackerLines.length) {
+      const tb = trackerLines.join('\n');
+      const enabledM = tb.match(/enabled:\s*(true|false)/);
+      const snoozeM  = tb.match(/snoozeOptions:\s*\[([^\]]+)\]/);
+      const startM   = tb.match(/startTime:\s*["']?(\S+?)["']?\s*(?:\n|$)/);
+      const endM     = tb.match(/endTime:\s*["']?(\S+?)["']?\s*(?:\n|$)/);
+      habitTracker = {
+        enabled: enabledM ? enabledM[1] === 'true' : true,
+        snoozeOptions: snoozeM ? snoozeM[1].split(',').map(s => parseInt(s.trim())).filter(Boolean) : [5, 10],
+        startTime: startM ? startM[1] : '06:30',
+        endTime:   endM   ? endM[1]   : '21:30',
+      };
+    }
+  } catch(e) { console.warn('parseHabitTrackerMd:', e); }
+
+  return { habitDefinitions, habitTracker };
 }
 
 // ── PARSE .MD FRONTMATTER ──────────────────────────────────────────────────
@@ -901,13 +1168,44 @@ function getTodaySchedule() {
 }
 
 function getCurNext() {
+  // cur = index of the task whose window (start → start+duration) contains now,
+  //        OR the most-recently-passed task if we're between tasks.
+  // next = index of the next upcoming task (start > now).
   const now=new Date(), sc=getTodaySchedule();
   let cur=-1, next=-1;
   for (let i=0;i<sc.length;i++) {
-    if (schedDate(sc[i].time)<=now) cur=i;
-    else if (next===-1) next=i;
+    const t = schedDate(sc[i].time);
+    if (t <= now) cur = i;      // task has started
+    else if (next === -1) { next = i; break; }
   }
-  return {cur,next};
+  return {cur, next};
+}
+
+// Returns true if we are currently INSIDE task i (start <= now < start+duration)
+function isInsideTask(sc, i) {
+  if (i < 0 || i >= sc.length) return false;
+  const start = schedDate(sc[i].time);
+  const dur   = (sc[i].duration || 30) * 60000;
+  const end   = new Date(start.getTime() + dur);
+  const now   = new Date();
+  return now >= start && now < end;
+}
+
+// Returns true if we are past the end of the last task for today
+function isPastLastTask() {
+  const sc = getTodaySchedule();
+  if (!sc.length) return false;
+  const last = sc[sc.length - 1];
+  const start = schedDate(last.time);
+  const dur   = (last.duration || 30) * 60000;
+  return Date.now() >= start.getTime() + dur;
+}
+
+// Returns true if we are before the first task of today
+function isBeforeFirstTask() {
+  const sc = getTodaySchedule();
+  if (!sc.length) return false;
+  return new Date() < schedDate(sc[0].time);
 }
 function detectHabit(activity) {
   for (const [key,cfg] of Object.entries(S.config?.habitDefinitions||{}))
@@ -1084,6 +1382,8 @@ function renderCountdown() {
     left.innerHTML = `<div class="cw"><div class="empty-state" style="padding:8px 0;font-size:13px">No schedule today</div></div>`;
     return;
   }
+
+  // ── Snooze check ──
   for (const idx in S.snooze) {
     const until = S.snooze[idx];
     if (until > Date.now()) {
@@ -1095,30 +1395,69 @@ function renderCountdown() {
       return;
     }
   }
-  const {cur,next} = getCurNext();
-  if (cur===-1 && next===-1) {
-    left.innerHTML = `<div class="cw"><div style="font-size:13px;color:var(--accent);font-family:var(--font-mono)">✨ All done!</div></div>`;
+
+  // ── Before first task: silent wait (no countdown shown yet) ──
+  if (isBeforeFirstTask()) {
+    const first = todaySched[0];
+    const rem = schedDate(first.time) - Date.now();
+    left.innerHTML = `<div class="cw">
+      <div class="ca" style="font-size:13px;color:var(--muted)">Day starts soon</div>
+      <div class="cm"><span class="cl">First: ${first.time}</span><span class="ct${rem<300000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+    </div>`;
     return;
   }
-  if (cur === -1) {
-    const ni = todaySched[next]; const rem = schedDate(ni.time) - Date.now();
-    left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">Up next: ${ni.activity}</div>
+
+  // ── After last task ends: all done ──
+  if (isPastLastTask()) {
+    const last = todaySched[todaySched.length - 1];
+    left.innerHTML = `<div class="cw">
+      <div style="font-size:13px;color:var(--accent);font-family:var(--font-mono)">✅ All tasks done for today!</div>
+      <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:4px">Last: ${last.activity}</div>
+    </div>`;
+    return;
+  }
+
+  const {cur, next} = getCurNext();
+
+  // ── Inside a running task ──
+  if (isInsideTask(todaySched, cur)) {
+    const ci = todaySched[cur];
+    const taskStart = schedDate(ci.time);
+    const taskEnd   = new Date(taskStart.getTime() + (ci.duration || 30) * 60000);
+    const rem       = taskEnd - Date.now();
+
+    if (next === -1) {
+      // Last task — show task + time remaining in it
+      left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
+        <div class="cm"><span class="cl">Ends in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+        <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${Math.max(0,Math.min(100,100-(rem/((ci.duration||30)*60000))*100))}%"></div></div></div>`;
+    } else {
+      const ni = todaySched[next], remNext = schedDate(ni.time) - Date.now();
+      const span = schedDate(ni.time) - taskStart;
+      const pct  = Math.max(0, Math.min(100, 100 - (remNext / span * 100)));
+      left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
+        <div class="cm"><span class="cl">Next: ${ni.time}</span><span class="ct${remNext<60000?' urgent':''}" id="main-timer">${fmtMs(remNext)}</span></div>
+        <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div></div>`;
+    }
+    return;
+  }
+
+  // ── In a gap between tasks (cur task ended, next hasn't started) ──
+  if (next !== -1) {
+    const ni  = todaySched[next];
+    const rem = schedDate(ni.time) - Date.now();
+    const ci  = cur >= 0 ? todaySched[cur] : null;
+    left.innerHTML = `<div class="cw">
+      ${ci ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">✓ ${ci.activity}</div>` : ''}
+      <div class="ca" style="font-size:14px;margin-top:${ci?'6px':'0'}">Up next: ${ni.activity}</div>
       <div class="cm"><span class="cl">Starts in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
-      <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:0%"></div></div></div>`;
+      <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:0%"></div></div>
+    </div>`;
     return;
   }
-  const ci = todaySched[cur];
-  if (next === -1) {
-    left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-      <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-top:4px">✨ Final activity</div></div>`;
-    return;
-  }
-  const ni = todaySched[next], rem = schedDate(ni.time) - Date.now();
-  const span = schedDate(ni.time) - schedDate(ci.time);
-  const pct = Math.max(0, Math.min(100, 100 - (rem / span * 100)));
-  left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-    <div class="cm"><span class="cl">Next: ${ni.time}</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
-    <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div></div>`;
+
+  // Fallback
+  left.innerHTML = `<div class="cw"><div style="font-size:13px;color:var(--accent);font-family:var(--font-mono)">✅ All tasks done for today!</div></div>`;
 }
 
 // ── RENDER — EVENT PANEL (right side of Now card) ──────────────────────────
@@ -1192,18 +1531,52 @@ async function renderEventPanel() {
 }
 
 function tickCountdown() {
-  const snEl=document.getElementById('snooze-timer');
+  const snEl = document.getElementById('snooze-timer');
   const todaySched = getTodaySchedule();
-  if (snEl) { for (const idx in S.snooze) { if(S.snooze[idx]>Date.now()){ snEl.textContent=fmtMs(S.snooze[idx]-Date.now()); return; }} renderCountdown(); return; }
-  const tEl=document.getElementById('main-timer'); if (!tEl) return;
-  const {next}=getCurNext(); if (next===-1) { renderCountdown(); return; }
-  if (!todaySched[next]) { renderCountdown(); return; }
-  const rem=schedDate(todaySched[next].time)-Date.now();
-  if (rem<=0) { renderCountdown(); return; }
-  tEl.textContent=fmtMs(rem);
-  rem<60000?tEl.classList.add('urgent'):tEl.classList.remove('urgent');
-  const prog=document.getElementById('prog-bar');
-  if (prog) { const {cur}=getCurNext(); if(cur!==-1&&todaySched[cur]){ const sp=schedDate(todaySched[next].time)-schedDate(todaySched[cur].time); prog.style.width=Math.max(0,Math.min(100,100-(rem/sp*100)))+'%'; }}
+
+  // Snooze tick
+  if (snEl) {
+    for (const idx in S.snooze) { if (S.snooze[idx] > Date.now()) { snEl.textContent = fmtMs(S.snooze[idx]-Date.now()); return; } }
+    renderCountdown(); return;
+  }
+
+  const tEl = document.getElementById('main-timer'); if (!tEl) return;
+
+  // Re-render when we cross a boundary (before-first, after-last, task-start/end)
+  if (isBeforeFirstTask() || isPastLastTask()) { renderCountdown(); return; }
+
+  const {cur, next} = getCurNext();
+
+  // Inside a running task: count down to task end (or next task start if sooner)
+  if (isInsideTask(todaySched, cur)) {
+    const ci       = todaySched[cur];
+    const taskEnd  = new Date(schedDate(ci.time).getTime() + (ci.duration||30)*60000);
+    const target   = next !== -1 ? schedDate(todaySched[next].time) : taskEnd;
+    const rem      = target - Date.now();
+    if (rem <= 0) { renderCountdown(); return; }
+    tEl.textContent = fmtMs(rem);
+    rem < 60000 ? tEl.classList.add('urgent') : tEl.classList.remove('urgent');
+    const prog = document.getElementById('prog-bar');
+    if (prog && next !== -1) {
+      const span = schedDate(todaySched[next].time) - schedDate(ci.time);
+      prog.style.width = Math.max(0, Math.min(100, 100-(rem/span*100))) + '%';
+    } else if (prog) {
+      const total = (ci.duration||30)*60000;
+      prog.style.width = Math.max(0, Math.min(100, 100-((taskEnd-Date.now())/total*100))) + '%';
+    }
+    return;
+  }
+
+  // In a gap: count down to next task start
+  if (next !== -1) {
+    const rem = schedDate(todaySched[next].time) - Date.now();
+    if (rem <= 0) { renderCountdown(); return; }
+    tEl.textContent = fmtMs(rem);
+    rem < 60000 ? tEl.classList.add('urgent') : tEl.classList.remove('urgent');
+    return;
+  }
+
+  renderCountdown();
 }
 
 
@@ -1289,24 +1662,24 @@ function pomoTick() {
 }
 
 function pomoUpdateBtn() {
-  const btn = document.getElementById('pomo-btn');
-  if (!btn) return;
-  btn.classList.toggle('active', POMO.active);
+  const buttons = [document.getElementById('pomo-btn'), document.getElementById('pomo-btn-header')].filter(Boolean);
+  if (!buttons.length) return;
+  const btn = buttons[0];
+  buttons.forEach(b => b.classList.toggle('active', POMO.active));
   // If timer is running, show ring; else show dot
-  if (POMO.active && POMO.endTime) {
+  const svgInner = POMO.active && POMO.endTime ? (() => {
     const rem = POMO.endTime - Date.now();
     const total = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
     const pct = 1 - rem / total;
     const r = 8, circ = 2 * Math.PI * r;
-    btn.innerHTML = `<svg width="22" height="22" viewBox="0 0 22 22">
+    return `<svg width="22" height="22" viewBox="0 0 22 22">
       <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--border)" stroke-width="2.5"/>
       <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
         stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-pct)}" transform="rotate(-90 11 11)"
         style="transition:stroke-dashoffset .5s linear"/>
     </svg>`;
-  } else {
-    btn.innerHTML = `<div class="pomo-dot"></div>`;
-  }
+  })() : '<div class="pomo-dot"></div>';
+  buttons.forEach(b => { b.innerHTML = svgInner; });
 }
 
 function showPomoPopup() {
@@ -1316,7 +1689,7 @@ function showPomoPopup() {
   const cfg = pomoGetSettings();
   const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.id = 'pomo-popup';
 
-  const R = 54, circ = 2 * Math.PI * R;
+  const R = 44, circ = 2 * Math.PI * R;
   const focusMax = Math.max(1, cfg.focusMaxMins || 60);
   const breakMax = Math.max(1, cfg.breakMaxMins || 15);
   const focusMinsArr = Array.from({length: focusMax}, (_,i) => String(i+1).padStart(2,'0'));
@@ -1327,40 +1700,55 @@ function showPomoPopup() {
     return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
   }
 
-  function currentPhaseColor() { return POMO.phase === 'work' ? 'var(--accent)' : 'var(--warn)'; }
+  // Decide initial ring values
+  const initFocusMins = Math.min(cfg.workMins, focusMax);
+  const initBreakMins = Math.min(cfg.breakMins, breakMax);
 
   ov.innerHTML = `<div class="modal" style="max-width:300px">
     <div class="modal-handle"></div>
     <div style="text-align:center;font-size:16px;font-weight:800;margin-bottom:16px">▶ Focus</div>
 
-    <!-- Ring -->
-    <div style="display:flex;justify-content:center;margin-bottom:20px">
-      <div style="position:relative;width:140px;height:140px;flex-shrink:0">
-        <svg width="140" height="140" viewBox="0 0 140 140" style="position:absolute;inset:0;transform:rotate(-90deg)">
-          <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--border)" stroke-width="6"/>
-          <circle id="pomo-popup-arc" cx="70" cy="70" r="${R}" fill="none"
-            stroke="var(--accent)" stroke-width="6"
-            stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
-            stroke-linecap="round" style="transition:stroke-dashoffset .5s linear"/>
-        </svg>
-        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
-          <span id="pomo-popup-time" style="font-size:28px;font-family:var(--font-mono);font-weight:800;color:var(--accent);line-height:1;letter-spacing:-1px">--:--</span>
-          <span id="pomo-popup-phase" style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1.5px">min : sec</span>
+    <!-- Dual rings: Focus + Break side by side -->
+    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:20px;align-items:center">
+
+      <!-- Focus ring -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div id="pomo-focus-ring" style="position:relative;width:110px;height:110px;flex-shrink:0;cursor:pointer" title="Tap to set focus time">
+          <svg width="110" height="110" viewBox="0 0 110 110" style="position:absolute;inset:0;transform:rotate(-90deg)">
+            <circle cx="55" cy="55" r="${R}" fill="none" stroke="var(--border)" stroke-width="5"/>
+            <circle id="pomo-focus-arc" cx="55" cy="55" r="${R}" fill="none"
+              stroke="var(--accent)" stroke-width="5"
+              stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+              stroke-linecap="round" style="transition:stroke-dashoffset .5s linear"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+            <span id="pomo-focus-time" style="font-size:22px;font-family:var(--font-mono);font-weight:800;color:var(--accent);line-height:1;letter-spacing:-1px">${String(initFocusMins).padStart(2,'0')}:00</span>
+            <span id="pomo-focus-phase" style="font-size:8px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px">Focus</span>
+          </div>
+        </div>
+        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:4px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block"></span>Focus
         </div>
       </div>
-    </div>
 
-    <!-- Drums — always interactive -->
-    <div id="pomo-drums-wrap" style="margin-bottom:16px;display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;width:52px;flex-shrink:0">Focus</div>
-        <div id="pomo-focus-drum" style="flex:1;min-width:0"></div>
-        <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0">min</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;width:52px;flex-shrink:0">Break</div>
-        <div id="pomo-break-drum" style="flex:1;min-width:0"></div>
-        <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0">min</div>
+      <!-- Break ring -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div id="pomo-break-ring" style="position:relative;width:110px;height:110px;flex-shrink:0;cursor:pointer" title="Tap to set break time">
+          <svg width="110" height="110" viewBox="0 0 110 110" style="position:absolute;inset:0;transform:rotate(-90deg)">
+            <circle cx="55" cy="55" r="${R}" fill="none" stroke="var(--border)" stroke-width="5"/>
+            <circle id="pomo-break-arc" cx="55" cy="55" r="${R}" fill="none"
+              stroke="var(--warn)" stroke-width="5"
+              stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+              stroke-linecap="round" style="transition:stroke-dashoffset .5s linear"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+            <span id="pomo-break-time" style="font-size:22px;font-family:var(--font-mono);font-weight:800;color:var(--warn);line-height:1;letter-spacing:-1px">${String(initBreakMins).padStart(2,'0')}:00</span>
+            <span id="pomo-break-phase" style="font-size:8px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px">Break</span>
+          </div>
+        </div>
+        <div style="font-size:9px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:4px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--warn);display:inline-block"></span>Break
+        </div>
       </div>
     </div>
 
@@ -1385,22 +1773,82 @@ function showPomoPopup() {
       </div>
     </div>
 
-    <!-- Button — toggles between Start and Stop in place -->
+    <!-- Start/Stop button -->
     <button id="pomo-main-btn" class="btn btn-green" style="width:100%">▶ Start</button>
   </div>`;
   document.body.appendChild(ov);
 
-  const arcEl    = ov.querySelector('#pomo-popup-arc');
-  const timeEl   = ov.querySelector('#pomo-popup-time');
-  const phaseEl  = ov.querySelector('#pomo-popup-phase');
-  const mainBtn  = ov.querySelector('#pomo-main-btn');
-  const drumsWrap = ov.querySelector('#pomo-drums-wrap');
+  const focusArcEl  = ov.querySelector('#pomo-focus-arc');
+  const breakArcEl  = ov.querySelector('#pomo-break-arc');
+  const focusTimeEl = ov.querySelector('#pomo-focus-time');
+  const breakTimeEl = ov.querySelector('#pomo-break-time');
+  const focusPhaseEl = ov.querySelector('#pomo-focus-phase');
+  const breakPhaseEl = ov.querySelector('#pomo-break-phase');
+  const mainBtn     = ov.querySelector('#pomo-main-btn');
+  const focusRingEl = ov.querySelector('#pomo-focus-ring');
+  const breakRingEl = ov.querySelector('#pomo-break-ring');
 
-  // ── Build drums ──
-  const focusInitIdx = Math.min(cfg.workMins, focusMax) - 1;
-  const breakInitIdx = Math.min(cfg.breakMins, breakMax) - 1;
-  const focusDrum = buildTimeDrum_simple(ov.querySelector('#pomo-focus-drum'), focusMinsArr, focusInitIdx);
-  const breakDrum = buildTimeDrum_simple(ov.querySelector('#pomo-break-drum'), breakMinsArr, breakInitIdx);
+  // ── Drum state (in-memory, not DOM drums) ──
+  let focusSel = initFocusMins;  // current selected minutes
+  let breakSel = initBreakMins;
+
+  // ── Show drum picker sheet ──
+  function showDrumPicker(type) {
+    // type: 'focus' | 'break'
+    const isFocus = type === 'focus';
+    const items   = isFocus ? focusMinsArr : breakMinsArr;
+    const initVal = isFocus ? focusSel : breakSel;
+    const color   = isFocus ? 'var(--accent)' : 'var(--warn)';
+    const label   = isFocus ? 'Focus Time' : 'Break Time';
+
+    const sheet = document.createElement('div');
+    sheet.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)';
+    sheet.innerHTML = `<div style="background:var(--bg2);border-radius:20px 20px 0 0;width:100%;max-width:360px;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px))">
+      <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px"></div>
+      <div style="text-align:center;font-size:14px;font-weight:800;margin-bottom:16px;color:${color}">${label}</div>
+      <div id="drum-picker-wrap" style="width:120px;margin:0 auto 20px"></div>
+      <div style="display:flex;gap:10px">
+        <button id="drum-cancel" class="btn btn-ghost" style="flex:1">Cancel</button>
+        <button id="drum-set" class="btn btn-green" style="flex:2;background:${color};color:var(--bg)">Set</button>
+      </div>
+    </div>`;
+    document.body.appendChild(sheet);
+
+    const drum = buildTimeDrum_simple(sheet.querySelector('#drum-picker-wrap'), items, items.indexOf(String(initVal).padStart(2,'0')));
+
+    sheet.querySelector('#drum-cancel').addEventListener('click', () => sheet.remove());
+    sheet.addEventListener('click', e => { if (e.target === sheet) sheet.remove(); });
+    sheet.querySelector('#drum-set').addEventListener('click', () => {
+      const val = parseInt(drum.getSelected());
+      if (isFocus) {
+        focusSel = val;
+        const s = pomoGetSettings();
+        LS.set('pomoSettings', { ...s, workMins: val });
+        // Snap auto-calc if needed
+        if (POMO.autoCalc !== false) {
+          const free = getAutoFocusMins();
+          if (free > 0) focusSel = Math.min(val, free);
+        }
+      } else {
+        breakSel = val;
+        const s = pomoGetSettings();
+        LS.set('pomoSettings', { ...s, breakMins: val });
+      }
+      updateDisplay();
+      sheet.remove();
+    });
+  }
+
+  // ── Ring click → open drum picker ──
+  focusRingEl.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!POMO.active) showDrumPicker('focus');
+  });
+  breakRingEl.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!POMO.active) showDrumPicker('break');
+    else if (POMO.active && POMO.phase === 'break') showDrumPicker('break'); // allow changing break during break
+  });
 
   // ── Loop toggle ──
   const track = ov.querySelector('#pomo-loop-track');
@@ -1417,35 +1865,69 @@ function showPomoPopup() {
   const autoLabel = ov.querySelector('#pomo-auto-range-label');
 
   function getAutoFocusMins() {
-    // Calculate free minutes before the next scheduled/routine task from now
+    // Returns:
+    //  -1 = outside schedule window (before first task OR after last task ends)
+    //   0 = currently inside a running task (no free time)
+    //   N = free minutes until the next task starts (gap between tasks)
     const now = new Date();
-    const todayISO = now.toISOString().slice(0,10);
     const allToday = getTodaySchedule()
       .filter(it => it.time && it.blockType !== 'open')
       .sort((a,b) => { try{return schedDate(a.time)-schedDate(b.time);}catch{return 0;} });
-    // Find the next upcoming task
-    let nextTask = null;
-    for (const it of allToday) {
-      try { if (schedDate(it.time) > now) { nextTask = it; break; } } catch {}
+
+    if (!allToday.length) return -1;
+
+    const firstTask = allToday[0];
+    const lastTask  = allToday[allToday.length - 1];
+    const firstTime = schedDate(firstTask.time);
+
+    // Last task ends at its start time + duration (default 30 min if not set)
+    const lastTaskDur = (lastTask.duration || 30) * 60000;
+    const lastEndTime = new Date(schedDate(lastTask.time).getTime() + lastTaskDur);
+
+    // Outside window: before first task starts or after last task ends
+    if (now < firstTime) return -1;
+    if (now >= lastEndTime) return -1;
+
+    // Find which task slot "now" falls inside (start to start+duration)
+    for (let i = 0; i < allToday.length; i++) {
+      const taskStart = schedDate(allToday[i].time);
+      const taskDur   = (allToday[i].duration || 30) * 60000;
+      const taskEnd   = new Date(taskStart.getTime() + taskDur);
+
+      if (now >= taskStart && now < taskEnd) {
+        // We are inside task i — no free time right now
+        return 0;
+      }
+
+      // We are in the gap after task i ends — check if next task exists
+      if (now >= taskEnd) {
+        const nextTask = allToday[i + 1];
+        if (nextTask) {
+          const nextStart = schedDate(nextTask.time);
+          if (now < nextStart) {
+            // In the gap between task i end and task i+1 start
+            return Math.max(0, Math.floor((nextStart - now) / 60000));
+          }
+          // now >= nextStart means we've moved into the next task iteration
+        }
+      }
     }
-    if (!nextTask) return 0; // no next task → we might be past all tasks
-    const msUntil = schedDate(nextTask.time) - now;
-    const mins = Math.floor(msUntil / 60000);
-    // Check if currently in a task (current task exists and we're within it)
-    const { cur } = getCurNext();
-    if (cur !== -1) return 0; // on a task currently → range = 0
-    return Math.max(0, mins);
+
+    return -1;
   }
 
   function updateAutoLabel() {
     if (!autoLabel) return;
     if (POMO.autoCalc !== false) {
       const freeMins = getAutoFocusMins();
-      if (freeMins === 0) {
-        autoLabel.textContent = 'On task — range: 0 min';
+      if (freeMins === -1) {
+        autoLabel.textContent = '✨ All activities done for today';
+        autoLabel.style.color = 'var(--accent)';
+      } else if (freeMins === 0) {
+        autoLabel.textContent = 'On task — no free time now';
         autoLabel.style.color = 'var(--danger)';
       } else {
-        autoLabel.textContent = `Free until next: ${freeMins} min`;
+        autoLabel.textContent = `Free: ${freeMins} min`;
         autoLabel.style.color = 'var(--accent)';
       }
     } else {
@@ -1458,76 +1940,109 @@ function showPomoPopup() {
     autoTrack.style.background = POMO.autoCalc !== false ? 'var(--accent)' : 'rgba(255,255,255,.1)';
     autoKnob.style.left = POMO.autoCalc !== false ? '22px' : '2px';
     updateAutoLabel();
-    // If auto-calc is on and timer not running, snap focus drum to free minutes
     if (POMO.autoCalc !== false && !POMO.active) {
       const freeMins = getAutoFocusMins();
-      if (freeMins > 0 && focusDrum) {
-        const clampedIdx = Math.min(freeMins, focusMax) - 1;
-        focusDrum.snapTo && focusDrum.snapTo(clampedIdx);
-      }
+      if (freeMins > 0) { focusSel = Math.min(focusSel, freeMins); updateDisplay(); }
     }
   });
 
   updateAutoLabel();
 
-  // ── Update ring / time display ──
+  // ── Update both rings / time display ──
   function updateDisplay() {
     if (!POMO.active || !POMO.endTime) {
-      // Idle: show selected drum value as countdown preview
-      const w = focusDrum ? parseInt(focusDrum.getSelected()) : cfg.workMins;
-      timeEl.textContent = String(w).padStart(2,'0') + ':00';
-      timeEl.style.color = 'var(--accent)';
-      phaseEl.textContent = 'min : sec';
-      arcEl.setAttribute('stroke-dashoffset', String(circ));
-      arcEl.setAttribute('stroke', 'var(--accent)');
-      drumsWrap.style.opacity = '';
-      drumsWrap.style.pointerEvents = '';
+      // Idle: show selected drum values as preview
+      let w = focusSel;
+      if (POMO.autoCalc !== false) {
+        const freeMins = getAutoFocusMins();
+        if (freeMins > 0) w = Math.min(focusSel, freeMins);
+      }
+      const b = breakSel;
+
+      // Focus ring — static (full empty ring)
+      focusTimeEl.textContent = String(w).padStart(2,'0') + ':00';
+      focusTimeEl.style.color = 'var(--accent)';
+      focusPhaseEl.textContent = 'Focus';
+      focusArcEl.setAttribute('stroke-dashoffset', String(circ));
+      focusArcEl.setAttribute('stroke', 'var(--accent)');
+      focusRingEl.style.opacity = '1';
+      focusRingEl.title = 'Tap to set focus time';
+
+      // Break ring — static
+      breakTimeEl.textContent = String(b).padStart(2,'0') + ':00';
+      breakTimeEl.style.color = 'var(--warn)';
+      breakPhaseEl.textContent = 'Break';
+      breakArcEl.setAttribute('stroke-dashoffset', String(circ));
+      breakArcEl.setAttribute('stroke', 'var(--warn)');
+      breakRingEl.style.opacity = POMO.loop ? '1' : '0.35';
+      breakRingEl.title = POMO.loop ? 'Tap to set break time' : 'Enable Loop to use break';
+
       mainBtn.textContent = '▶ Start';
       mainBtn.className = 'btn btn-green';
       mainBtn.style.width = '100%';
       mainBtn.style.color = '';
       updateAutoLabel();
-      // Snap focus drum to free time if autoCalc is on
-      if (POMO.autoCalc !== false && !POMO.active && focusDrum && focusDrum.snapTo) {
-        const freeMins = getAutoFocusMins();
-        if (freeMins > 0) focusDrum.snapTo(Math.min(freeMins, focusMax) - 1);
-      }
       return;
     }
+
+    // Active timer
     const rem = Math.max(0, POMO.endTime - Date.now());
-    const total = (POMO.phase === 'work' ? POMO.workMins : POMO.breakMins) * 60000;
+    const isWork = POMO.phase === 'work';
+    const total = (isWork ? POMO.workMins : POMO.breakMins) * 60000;
     const pct = 1 - rem / total;
-    const col = POMO.phase === 'work' ? 'var(--accent)' : 'var(--warn)';
-    arcEl.setAttribute('stroke-dashoffset', String(circ * (1 - pct)));
-    arcEl.setAttribute('stroke', col);
-    timeEl.textContent = fmtMmSs(rem);
-    timeEl.style.color = col;
-    phaseEl.textContent = POMO.phase === 'work' ? 'Focus' : 'Break';
-    drumsWrap.style.opacity = '.38';
-    drumsWrap.style.pointerEvents = 'none';
+    const col = isWork ? 'var(--accent)' : 'var(--warn)';
+
+    if (isWork) {
+      // Update focus ring as active
+      focusArcEl.setAttribute('stroke-dashoffset', String(circ * (1 - pct)));
+      focusArcEl.setAttribute('stroke', 'var(--accent)');
+      focusTimeEl.textContent = fmtMmSs(rem);
+      focusTimeEl.style.color = 'var(--accent)';
+      focusPhaseEl.textContent = 'Focus';
+      focusRingEl.style.opacity = '1';
+      // Break ring dims
+      breakArcEl.setAttribute('stroke-dashoffset', String(circ));
+      breakTimeEl.textContent = String(breakSel).padStart(2,'0') + ':00';
+      breakTimeEl.style.color = 'var(--warn)';
+      breakRingEl.style.opacity = '0.35';
+    } else {
+      // Break phase — update break ring
+      breakArcEl.setAttribute('stroke-dashoffset', String(circ * (1 - pct)));
+      breakArcEl.setAttribute('stroke', 'var(--warn)');
+      breakTimeEl.textContent = fmtMmSs(rem);
+      breakTimeEl.style.color = 'var(--warn)';
+      breakPhaseEl.textContent = 'Break';
+      breakRingEl.style.opacity = '1';
+      // Focus ring dims
+      focusArcEl.setAttribute('stroke-dashoffset', String(circ));
+      focusTimeEl.textContent = String(focusSel).padStart(2,'0') + ':00';
+      focusTimeEl.style.color = 'var(--accent)';
+      focusRingEl.style.opacity = '0.35';
+    }
+
     mainBtn.textContent = '■ Stop';
     mainBtn.className = 'btn btn-ghost';
     mainBtn.style.width = '100%';
     mainBtn.style.color = 'var(--danger)';
   }
 
-  // ── Start/Stop toggle (in place, no close/reopen) ──
+  // ── Start/Stop button ──
   mainBtn.addEventListener('click', () => {
     if (POMO.active) {
       pomoStop();
       updateDisplay();
     } else {
-      let w = focusDrum ? parseInt(focusDrum.getSelected()) : cfg.workMins;
-      const b = breakDrum ? parseInt(breakDrum.getSelected()) : cfg.breakMins;
-      // If auto-calc is on, cap focus time to available free time
+      let w = focusSel;
+      const b = breakSel;
       if (POMO.autoCalc !== false) {
         const freeMins = getAutoFocusMins();
         if (freeMins === 0) { showToast('⏳ Currently on a task — no free time'); return; }
-        w = Math.min(w, freeMins);
-        if (focusDrum && focusDrum.snapTo) focusDrum.snapTo(w - 1);
+        if (freeMins > 0) { w = Math.min(w, freeMins); focusSel = w; }
       }
       const s = pomoGetSettings();
       LS.set('pomoSettings', { ...s, workMins: w, breakMins: b });
+      POMO.workMins = w;
+      POMO.breakMins = b;
       pomoStart('work');
       updateDisplay();
     }
@@ -2562,7 +3077,7 @@ function renderScheduledTab(el) {
           try{S.config.schedule.sort((a,b)=>schedDate(a.time)-schedDate(b.time));}catch{}
           LS.set('lastConfig',S.config);saveScheduleToVault();forceSwUpdate();
           buildCalGrid();buildEventList();
-        });
+        }, 'scheduled');
       });
 
       const delBtn = document.createElement('button'); delBtn.className='tb-action-btn del'; delBtn.innerHTML='✕'; delBtn.style.cssText='width:26px;height:26px;font-size:11px';
@@ -2929,7 +3444,7 @@ function buildTimeDrum(containerId, initialTime) {
 }
 
 // ── SHARED SCHEDULE POPUP (Edit only — Add has its own flow) ────────────────
-function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSave, initialRepeat) {
+function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSave, initialRepeat, hideRepeat) {
   const repeatOpts = [
     { val: 'daily',   label: '🔁 Daily' },
     { val: 'weekly',  label: '📅 Weekly' },
@@ -2947,10 +3462,10 @@ function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSav
     <div id="time-drum-root"></div>
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:16px">Activity</div>
     <input type="text" id="sp-act" placeholder="Activity description" autocomplete="off" style="margin-bottom:12px"/>
-    <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Repeat</div>
+    ${!hideRepeat ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Repeat</div>
     <select id="sp-repeat-sel" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;margin-bottom:16px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'12\\' height=\\'12\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'%23555570\\' stroke-width=\\'2\\'%3E%3Cpolyline points=\\'6 9 12 15 18 9\\'%3E%3C/polyline%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 14px center;box-sizing:border-box">
       ${repeatOpts.map(o => `<option value="${o.val}"${curRepeat===o.val?' selected':''}>${o.label}</option>`).join('')}
-    </select>
+    </select>` : ''}
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" id="sp-cancel" style="flex:1">Cancel</button>
       <button class="btn btn-green" id="sp-save" style="flex:2">${saveLabel}</button>
@@ -2966,7 +3481,7 @@ function showSchedulePopup(title, initialTime, initialActivity, saveLabel, onSav
 
   let selectedRepeat = curRepeat;
   const repSel = ov.querySelector('#sp-repeat-sel');
-  repSel.addEventListener('change', () => { selectedRepeat = repSel.value; });
+  if (repSel) repSel.addEventListener('change', () => { selectedRepeat = repSel.value; });
 
   const close = () => document.body.removeChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
@@ -3362,10 +3877,6 @@ function showAddScheduleSheet(onDone, _forcedBlockType) {
       durRow.appendChild(durInput);
       durRow.appendChild(durUnit);
       sheet.appendChild(durRow);
-      const carryNote = document.createElement('div');
-      carryNote.style.cssText = 'font-size:11px;font-family:var(--font-mono);color:rgba(0,255,136,.6);background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:8px;padding:8px 12px;margin-bottom:16px';
-      carryNote.textContent = '🌀 Open blocks can carry over to the next day if not completed.';
-      sheet.appendChild(carryNote);
     }
 
     // ── Scheduled: show auto-selected date ──
@@ -3572,8 +4083,8 @@ function buildTimeDrumEl(container, initialTime) {
 }
 
 // ── EDIT SINGLE SCHEDULE ENTRY ─────────────────────────────────────────────
-function showEditSchedulePopup(currentTime, currentActivity, currentRepeat, onSave) {
-  showSchedulePopup('Edit Entry', currentTime, currentActivity, '✓ Save', onSave, currentRepeat || 'daily');
+function showEditSchedulePopup(currentTime, currentActivity, currentRepeat, onSave, blockType) {
+  showSchedulePopup('Edit Entry', currentTime, currentActivity, '✓ Save', onSave, currentRepeat || 'daily', blockType === 'scheduled');
 }
 
 async function saveScheduleToVault() {
@@ -3721,7 +4232,7 @@ async function showVaultBackups() {
         if (!confirm('Restore this backup? Your current schedule will be replaced.')) return;
         try {
           const f = files[parseInt(btn.dataset.backupIdx)];
-          const text = await (await f.getFile()).text();
+          const text = (await (await f.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
           // The backup file starts with comment lines then the original .md content
           // Strip the comment header lines we added
           const mdStart = text.indexOf('---\n');
@@ -4932,37 +5443,11 @@ function showSettings() {
     </div>`;
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
-  const backupSection = `<div class="s-section">
-      <div class="s-section-title">Schedule Backups</div>
-      <div class="s-row">
-        <div>
-          <div class="s-label">📁 ${vaultName2}/_backup/</div>
-          <div class="s-sub">Up to 3 rotating backups saved here on every schedule change. Open in Obsidian or any text editor to restore manually.</div>
-        </div>
-      </div>
-      ${S.vaultDirHandle ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-list-backups">View Schedule Backups</button>` : ''}
-    </div>`;
+  const backupSection = '';
 
   ov.innerHTML=`<div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Settings</div>
-
-    <div class="s-section">
-      <div class="s-section-title">📅 Calendar Heat Colors</div>
-      <div style="font-size:12px;font-family:var(--font-mono);color:var(--muted);margin-bottom:12px;line-height:1.6">The calendar view colors each day based on how many tasks are scheduled — from free (no color) to fully packed (red).</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-0" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">0 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Free</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-1" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">1–2 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Light</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-2" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">3–4 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Moderate</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-3" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">5–6 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Busy</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-4" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">7–8 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Very busy</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-5" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">9–10 tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Packed</div></div></div>
-        <div style="display:flex;align-items:center;gap:10px"><div class="cal-heat-6" style="width:22px;height:22px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)"></div><div><div style="font-size:12px;font-weight:700">11+ tasks</div><div style="font-size:10px;font-family:var(--font-mono);color:var(--muted)">Max load</div></div></div>
-      </div>
-      <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6">
-        💡 <b style="color:var(--text)">Tip:</b> Tap any day in the calendar to see its tasks broken down by Daily / Weekly / Monthly / Custom tabs below.
-      </div>
-    </div>
 
     <div class="s-section">
       <div class="s-section-title">Appearance</div>
@@ -5004,12 +5489,22 @@ function showSettings() {
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">📂 Vault Subfolders</div>
+      <div class="s-section-title">📂 Vault File Structure</div>
       <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;line-height:2.2">
-        <div>📁 <span style="color:var(--text)">Habit Tracker:</span> ${vaultName}/0 - Personal Space/Habit Tracker</div>
-        <div>📁 <span style="color:var(--text)">Log Output:</span> ${vaultName}/0 - Personal Space/Chrono Log/data</div>
-        <div>📄 <span style="color:var(--text)">Log Template:</span> _Daily_Log_Template.md <span style="color:var(--muted)">(in Log Output)</span></div>
-        <div>📁 <span style="color:var(--text)">Events:</span> ${vaultName}/0 - Personal Space/Events</div>
+        <div style="color:var(--accent);font-weight:700;margin-bottom:4px">📁 ${vaultName}/0 - Personal Space/</div>
+        <div style="padding-left:12px">📁 <b style="color:var(--text)">Time Blocks/</b> <span style="color:var(--muted)">— schedule source files</span></div>
+        <div style="padding-left:24px;font-size:10px;line-height:1.9">
+          <div>📄 <span style="color:var(--text)">Daily Routine.md</span> <span style="color:var(--muted)">— daily-routine: entries</span></div>
+          <div>📄 <span style="color:var(--text)">Scheduled Event.md</span> <span style="color:var(--muted)">— scheduled-event: entries</span></div>
+          <div>📄 <span style="color:var(--text)">Focused Work.md</span> <span style="color:var(--muted)">— focused-work: entries</span></div>
+        </div>
+        <div style="padding-left:12px;margin-top:4px">📁 <b style="color:var(--text)">Habit Tracker/</b></div>
+        <div style="padding-left:24px;font-size:10px;line-height:1.9">
+          <div>📄 <span style="color:var(--text)">Habit Tracker.md</span> <span style="color:var(--muted)">— habit-definition & habit-tracker config</span></div>
+          <div>📁 <span style="color:var(--text)">data/</span> <span style="color:var(--muted)">— daily habit log files</span></div>
+        </div>
+        <div style="padding-left:12px;margin-top:4px">📁 <b style="color:var(--text)">Chrono Log/data/</b> <span style="color:var(--muted)">— daily log output</span></div>
+
       </div>
       <div class="s-row" style="margin-top:10px">
         <div><div class="s-label">Habit Tracker</div></div>
@@ -5024,8 +5519,8 @@ function showSettings() {
         <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'✓':'–'}</span>
       </div>
       <div class="s-row">
-        <div><div class="s-label">Events</div></div>
-        <span class="pill ${S.eventsDirHandle?'pill-green':'pill-amber'}">${S.eventsDirHandle?'✓':'–'}</span>
+        <div><div class="s-label">Time Blocks</div></div>
+        <span class="pill ${S.timeBlocksDirHandle?'pill-green':'pill-amber'}">${S.timeBlocksDirHandle?'✓':'–'}</span>
       </div>
     </div>
 
@@ -5047,8 +5542,6 @@ function showSettings() {
     </div>
 
     ${batterySection}
-
-    ${backupSection}
 
     <div class="s-section">
       <div class="s-section-title">App</div>
@@ -5385,31 +5878,14 @@ function showTodaySchedulePopup() {
   const now = new Date();
   const allSc = S.config?.schedule || [];
 
-  // ── Gather today's items by category ──
-  // Routine: daily unlimited + blockType=routine
-  const routineItems = allSc.filter(item => {
-    const r = item.repeat || 'daily';
-    if (item.limitFrom && todayISO < item.limitFrom) return false;
-    if (item.limitTo   && todayISO > item.limitTo)   return false;
-    if (item.blockType === 'routine') return true;
-    if (!item.blockType && r === 'daily' && !item.limitFrom && !item.limitTo) return true;
-    return false;
-  });
+  // ── Gather today's items using the central getTodaySchedule() ──
+  // This is the single source of truth — all repeat/date logic lives there.
+  const todayAll = getTodaySchedule();
 
-  // Scheduled: blockType=scheduled or recurring/once on today
-  const scheduledItems = allSc.filter(item => {
-    if (item.blockType === 'open') return false;
-    if (item.blockType === 'routine') return false;
-    if (!item.blockType) {
-      // legacy items that are routine (daily unlimited) already captured above
-      const r = item.repeat || 'daily';
-      if (r === 'daily' && !item.limitFrom && !item.limitTo) return false;
-    }
-    return getScheduledItemsForDate(todayISO).includes(item);
-  });
-
-  // Focused Work: blockType=open
-  const focusedItems = allSc.filter(item => item.blockType === 'open');
+  // Split into display categories
+  const routineItems  = todayAll.filter(item => item.blockType === 'routine' || (!item.blockType && (item.repeat||'daily')==='daily'));
+  const scheduledItems = todayAll.filter(item => item.blockType === 'scheduled' || (item.blockType !== 'routine' && item.blockType !== 'open' && (item.repeat||'daily')!=='daily'));
+  const focusedItems  = todayAll.filter(item => item.blockType === 'open');
 
   // ── Merge routine + scheduled → sort by time ascending ──
   const timelineItems = [...routineItems, ...scheduledItems];
@@ -5420,15 +5896,18 @@ function showTodaySchedulePopup() {
     } catch { return 0; }
   });
 
-  // ── Determine current item index across timeline ──
-  const { cur } = getCurNext();
-  // We use our own cur detection based on time
+  // ── Determine current item index across timeline (duration-aware) ──
+  // An item is "current" if now is inside [start, start+duration)
+  // If between tasks, cur = most recently passed item, but not "inside" it
   let curTimelineIdx = -1;
+  let insideTask = false;
   timelineItems.forEach((item, i) => {
-    if (item.time) {
-      const t = schedDate(item.time);
-      if (t <= now) curTimelineIdx = i;
-    }
+    if (!item.time) return;
+    const start = schedDate(item.time);
+    const dur   = (item.duration || 30) * 60000;
+    const end   = new Date(start.getTime() + dur);
+    if (now >= start && now < end) { curTimelineIdx = i; insideTask = true; }
+    else if (now >= end && !insideTask) curTimelineIdx = i; // passed this task
   });
 
   // ── Build popup ──
@@ -5471,8 +5950,9 @@ function showTodaySchedulePopup() {
   // ── Render timeline ──
   function renderItem(item, idx, isFocused) {
     const row = document.createElement('div');
-    const isPast = !isFocused && item.time && schedDate(item.time) < now && idx < curTimelineIdx;
-    const isCur  = !isFocused && idx === curTimelineIdx;
+    const taskEnd = item.time ? new Date(schedDate(item.time).getTime() + (item.duration||30)*60000) : null;
+    const isPast  = !isFocused && taskEnd && taskEnd < now && idx !== curTimelineIdx;
+    const isCur   = !isFocused && idx === curTimelineIdx && insideTask;
     row.className = `tsched-item${isCur ? ' now' : ''}${isPast ? ' past' : ''}`;
 
     const timeSpan = document.createElement('span');
@@ -5518,7 +5998,7 @@ function showTodaySchedulePopup() {
   }
 
   if (!timelineItems.length && !focusedItems.length) {
-    body.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--muted);font-size:13px;font-family:var(--font-mono);line-height:1.8;opacity:.7">No activities scheduled today.<br>Add items in <b style="color:var(--text)">Time Blocks</b>.</div>`;
+    body.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--muted);font-size:13px;font-family:var(--font-mono);line-height:1.8;opacity:.7">No activities scheduled today.<br>Add items in your vault folder.</div>`;
   } else {
     // Timeline section
     if (timelineItems.length) {
@@ -5557,7 +6037,6 @@ function buildSkeleton() {
         <span class="card-label">Now</span>
         <div style="display:flex;align-items:center;gap:8px">
           <button id="btn-today-sched" title="Today's Schedule" style="width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">⏰</button>
-          <button class="pomo-btn" id="pomo-btn" title="Focus Timer"><div class="pomo-dot"></div></button>
         </div>
       </div>
       <div class="card-body" style="padding:0">
@@ -5594,7 +6073,7 @@ function buildSkeleton() {
   // ── Log text button ──
   document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
   document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
-  document.getElementById('pomo-btn')?.addEventListener('click', showPomoPopup);
+  document.getElementById('pomo-btn-header')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
     renderHabitBars();
@@ -5604,135 +6083,20 @@ function buildSkeleton() {
     renderHabitBars();
   });
 
-  const panels = document.getElementById('tab-panels');
-  const panelEls = panels.querySelectorAll('.tab-panel');
-  // Init: tab 0 active, tab 1 to the right (default via CSS)
-  panelEls[0].classList.add('active');
-
-  let activeTab = 0;
-  let editMode = false; // kept for API compat, not used in schedule tab
-
-  // ── Add FAB — always visible when Time Blocks tab is active ──
-  const fab = document.createElement('button'); // kept for compat (hidden)
-  fab.id = 'schedule-edit-fab';
-  fab.style.display = 'none';
-  document.body.appendChild(fab);
-
-  const addFab = document.createElement('button');
-  addFab.className = 'add-fab';
-  addFab.id = 'schedule-add-fab';
-  addFab.innerHTML = '＋';
-  addFab.title = 'Add Time Block';
-  document.body.appendChild(addFab);
-
-  addFab.addEventListener('click', () => {
-    showAddScheduleSheet(() => { renderScheduleTab(); });
-  });
-
   // No-op stubs (kept so any remaining callers don't throw)
   function commitEdits() {}
   function enterEditMode() {}
   function exitEditMode() {}
+  function switchTab() {}
   S._enterSchedEdit = enterEditMode;
-
-  function updatePanelClasses(idx) {
-    panelEls.forEach((p, i) => {
-      p.classList.toggle('active', i === idx);
-      p.classList.toggle('left',   i < idx);
-    });
-  }
-
-  function switchTab(idx) {
-    if (idx === activeTab) return;
-    if (S._habitEditMode) { S._habitEditMode = false; renderHabitBars(); }
-    activeTab = idx;
-    updatePanelClasses(idx);
-    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
-    // Show add FAB only when on Time Blocks tab
-    addFab.classList.toggle('visible', idx === 1);
-    if (idx === 1) renderScheduleTab();
-  }
-
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(parseInt(btn.dataset.tab)));
-  });
-
-  // ── Swipe between tabs ──
-  // Panels are absolute, full-width. CSS classes (.active / .left) position them.
-  // During a drag we offset EACH panel by the same dx using a data attribute + inline style.
-  let swipeStartX = 0, swipeStartY = 0;
-  let swipeTracking = false, swipeDecided = false;
-
-  function applyDragOffset(dx) {
-    panelEls.forEach(p => {
-      p.classList.add('dragging');
-      p.style.marginLeft = dx + 'px';
-    });
-  }
-
-  function clearDragOffset() {
-    panelEls.forEach(p => {
-      p.classList.remove('dragging');
-      p.style.marginLeft = '';
-    });
-  }
-
-  panels.addEventListener('touchstart', e => {
-    swipeStartX = e.touches[0].clientX;
-    swipeStartY = e.touches[0].clientY;
-    swipeTracking = false;
-    swipeDecided  = false;
-  }, { passive: true });
-
-  panels.addEventListener('touchmove', e => {
-    const dx = e.touches[0].clientX - swipeStartX;
-    const dy = e.touches[0].clientY - swipeStartY;
-
-    if (!swipeDecided) {
-      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
-      swipeDecided  = true;
-      swipeTracking = Math.abs(dx) >= Math.abs(dy);
-    }
-    if (!swipeTracking) return;
-
-    // Clamp: can't pull right on tab 0, can't pull left on last tab
-    const clampedDx = activeTab === 0 ? Math.min(0, dx)
-                    : activeTab === 1 ? Math.max(0, dx)
-                    : dx;
-    applyDragOffset(clampedDx);
-  }, { passive: true });
-
-  panels.addEventListener('touchend', e => {
-    if (!swipeTracking) return;
-    swipeTracking = false;
-    swipeDecided  = false;
-    const dx = e.changedTouches[0].clientX - swipeStartX;
-    clearDragOffset();
-    if (Math.abs(dx) > 50) {
-      switchTab(dx < 0 ? Math.min(1, activeTab + 1) : Math.max(0, activeTab - 1));
-    }
-  }, { passive: true });
-
-  panels.addEventListener('touchcancel', () => {
-    swipeTracking = false;
-    swipeDecided  = false;
-    clearDragOffset();
-  }, { passive: true });
-
   S._switchTab = switchTab;
-  S._getEditMode = () => editMode;
-  S._getActiveTab = () => activeTab;
-
-  // Re-snap on resize/orientation change
+  S._getEditMode = () => false;
+  S._getActiveTab = () => 0;
 }
 
 function renderAll() {
   renderCountdown();
   renderHabitBars();
-  // Only re-render schedule tab if it's currently visible
-  if (S._getActiveTab && S._getActiveTab() === 1) {
-    renderScheduleTab();
-  }
   // Keep SW alarm store in sync
   syncAlarmsToSW();
 }
@@ -5744,7 +6108,6 @@ function startTimers() {
     tickCountdown();
     if (new Date().getSeconds()===0) {
       renderCountdown();
-      if (S._getActiveTab && S._getActiveTab()===1) renderScheduleTab();
     }
   }, 1000);
   S.checkInterval=setInterval(checkAlarms, 2000);
@@ -5903,7 +6266,15 @@ async function boot() {
   document.getElementById('btn-settings').addEventListener('click', showSettings);
 
   // Load cached config + today's habits for instant render
-  const cached=LS.get('lastConfig');
+  // Cache-bust: drop stale cache saved by old parser (items with blockType:scheduled
+  // but no createdOn mean they were parsed incorrectly before per-date-time support).
+  let cached=LS.get('lastConfig');
+  if (cached?.schedule) {
+    const hasOldFormat = cached.schedule.some(
+      it => it.blockType === 'scheduled' && !it.createdOn && !it.customDates
+    );
+    if (hasOldFormat) { LS.del('lastConfig'); cached = null; }
+  }
   if (cached?.schedule) S.config=cached;
   S.habitData = LS.get('habitData_' + todayStr()) || {};
 
