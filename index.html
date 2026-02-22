@@ -4042,33 +4042,44 @@ async function writeLogEntry(logText) {
   };
   try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB log save failed:', e); }
 
-  // ── 2. Attempt folder write (desktop) — silently skip on Android ──
+  // ── 2. Attempt folder write ──
   if (S.logOutputDirHandle) {
     try {
       const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        const subDirs = basePath.split('/').slice(0, -1);
-        let dir = S.logOutputDirHandle;
-        for (const seg of subDirs) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
-        // Auto-increment to avoid collisions
-        let filename = baseFilename;
-        let suffix = 0;
-        while (true) {
-          try { await dir.getFileHandle(filename, { create: false }); suffix++;
-            const dot = baseFilename.lastIndexOf('.');
-            filename = baseFilename.slice(0,dot) + String(suffix).padStart(2,'0') + baseFilename.slice(dot);
-          } catch { break; }
-        }
-        const fh = await dir.getFileHandle(filename, { create: true });
-        const w = await fh.createWritable();
-        await w.write(newContent);
-        await w.close();
-        // Update IDB entry with the actual filename used
-        idbEntry.filename = filename;
-        idbEntry.path = [...subDirs, filename].filter(Boolean).join('/');
-        await IDBLogs.save(idbEntry);
+      if (perm !== 'granted') throw new Error('Permission denied for log output folder');
+
+      const subDirs = basePath.split('/').slice(0, -1);
+      let dir = S.logOutputDirHandle;
+      for (const seg of subDirs) {
+        if (seg) dir = await dir.getDirectoryHandle(seg, { create: true });
       }
-    } catch(e) { console.warn('Folder log write silently failed (IDB used):', e.message); }
+
+      // Find a unique filename (avoid overwriting existing files)
+      let filename = baseFilename;
+      let suffix = 0;
+      for (;;) {
+        let exists = false;
+        try { await dir.getFileHandle(filename, { create: false }); exists = true; } catch {}
+        if (!exists) break;
+        suffix++;
+        const dot = baseFilename.lastIndexOf('.');
+        filename = baseFilename.slice(0, dot) + String(suffix).padStart(2, '0') + baseFilename.slice(dot);
+      }
+
+      // Get handle, open writable with keepExistingData:false to guarantee truncation, write, close
+      const fh = await dir.getFileHandle(filename, { create: true });
+      const w = await fh.createWritable({ keepExistingData: false });
+      await w.write(newContent);
+      await w.close();
+
+      // Update IDB entry with the actual filename used
+      idbEntry.filename = filename;
+      idbEntry.path = [...subDirs, filename].filter(Boolean).join('/');
+      await IDBLogs.save(idbEntry);
+    } catch(e) {
+      console.error('Folder log write failed:', e);
+      showToast('\u26a0 Log saved to app only \u2014 folder write failed: ' + e.message);
+    }
   }
 
   return true;
@@ -4656,35 +4667,35 @@ function _openLogEditor(log) {
         } catch(e) { console.warn('IDB log update failed:', e); }
       }
 
-      // 2. Attempt folder write (desktop) — use log.handle if available
-      if (log.handle) {
-        try {
-          let perm;
-          try { perm = await log.handle.queryPermission({ mode: 'readwrite' }); } catch { perm = 'prompt'; }
-          if (perm !== 'granted') {
-            try { perm = await log.handle.requestPermission({ mode: 'readwrite' }); } catch { perm = 'denied'; }
-          }
-          if (perm === 'granted') {
-            const w = await log.handle.createWritable();
-            await w.write(newFullText);
-            await w.close();
-          }
-        } catch(e) { console.warn('Folder log edit write failed (IDB updated):', e.message); }
-      } else if (S.logOutputDirHandle) {
-        // IDB-only log — also write to folder now if folder is available
-        try {
+      // 2. Write to folder — via file handle (known file) or folder path (IDB-only log)
+      const writeToFolder = async () => {
+        if (log.handle) {
+          // File handle from folder scan — write directly
+          let perm = await log.handle.queryPermission({ mode: 'readwrite' }).catch(() => 'prompt');
+          if (perm !== 'granted') perm = await log.handle.requestPermission({ mode: 'readwrite' }).catch(() => 'denied');
+          if (perm !== 'granted') throw new Error('Permission denied on file handle');
+          const w = await log.handle.createWritable({ keepExistingData: false });
+          await w.write(newFullText);
+          await w.close();
+        } else if (S.logOutputDirHandle) {
+          // IDB-only log — navigate to folder and write
           const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-          if (perm === 'granted') {
-            const pathParts = log.path.split('/');
-            const filename = pathParts.pop();
-            let dir = S.logOutputDirHandle;
-            for (const seg of pathParts) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
-            const fh = await dir.getFileHandle(filename, { create: true });
-            const w = await fh.createWritable();
-            await w.write(newFullText);
-            await w.close();
-          }
-        } catch(e) { console.warn('Folder write for IDB log failed:', e.message); }
+          if (perm !== 'granted') throw new Error('Permission denied on output folder');
+          const pathParts = log.path.split('/');
+          const filename = pathParts.pop();
+          let dir = S.logOutputDirHandle;
+          for (const seg of pathParts) { if (seg) dir = await dir.getDirectoryHandle(seg, { create: true }); }
+          const fh = await dir.getFileHandle(filename, { create: true });
+          const w = await fh.createWritable({ keepExistingData: false });
+          await w.write(newFullText);
+          await w.close();
+        }
+      };
+      try {
+        await writeToFolder();
+      } catch(e) {
+        console.error('Folder log edit write failed:', e);
+        showToast('\u26a0 Saved to app only \u2014 folder write failed: ' + e.message);
       }
 
       // ── Update in-memory cache ──
