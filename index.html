@@ -575,6 +575,41 @@ async function getDataDir() {
   } catch(e) { console.error('getDataDir:', e); return null; }
 }
 
+// ── ALARM FILE PERSISTENCE ──────────────────────────────────────────────────
+// Saves pending alarms to vault/data/alarms.json — same pattern as writeHabitData.
+// Also saves to localStorage as fallback (mirrors habit system).
+async function saveAlarmsToVault(alarms) {
+  const payload = JSON.stringify(alarms, null, 2);
+  // localStorage fallback — always written first
+  LS.set('pendingAlarms', alarms);
+  if (!S.vaultDirHandle) return;
+  try {
+    const dataDir = await getDataDir();
+    if (!dataDir) return;
+    const fh = await dataDir.getFileHandle('alarms.json', { create: true });
+    const w = await fh.createWritable();
+    await w.write(payload);
+    await w.close();
+  } catch(e) {
+    console.warn('Alarm vault write failed (localStorage used):', e.message);
+  }
+}
+
+// Loads pending alarms from vault/data/alarms.json; falls back to localStorage.
+async function loadAlarmsFromVault() {
+  if (S.vaultDirHandle) {
+    try {
+      const dataDir = await getDataDir();
+      if (dataDir) {
+        const fh = await dataDir.getFileHandle('alarms.json', { create: false });
+        const text = await (await fh.getFile()).text();
+        return JSON.parse(text);
+      }
+    } catch { /* file doesn't exist yet */ }
+  }
+  return LS.get('pendingAlarms') || [];
+}
+
 // ── LOAD FROM VAULT ────────────────────────────────────────────────────────
 async function loadFromVault() {
   if (!S.vaultDirHandle) return;
@@ -879,6 +914,8 @@ function syncAlarmsToSW() {
   });
 
   navigator.serviceWorker.controller.postMessage({ type: 'SYNC_ALARMS', alarms });
+  // Also persist to vault file (same as habit data) so alarms survive a full SW restart
+  saveAlarmsToVault(alarms);
 }
 
 // ── FORCE SW UPDATE ─────────────────────────────────────────────────────────
@@ -5542,16 +5579,22 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     const swReg = await navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(console.error);
     // Once controller is available, start keep-alive and sync alarms
-    const kickSW = () => {
+    const kickSW = async () => {
       if (navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: 'START_KEEPALIVE' });
-        syncAlarmsToSW();
+        // Restore persisted alarms from vault file / localStorage into SW's IndexedDB,
+        // then re-derive fresh alarms from today's schedule (same as habit system restore)
+        const savedAlarms = await loadAlarmsFromVault();
+        if (savedAlarms.length && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'SYNC_ALARMS', alarms: savedAlarms });
+        }
+        syncAlarmsToSW(); // re-derives from schedule and overwrites with fresh set
       }
     };
     if (navigator.serviceWorker.controller) {
       kickSW();
     } else {
-      navigator.serviceWorker.addEventListener('controllerchange', kickSW, { once: true });
+      navigator.serviceWorker.addEventListener('controllerchange', () => kickSW(), { once: true });
     }
 
     // Listen for messages from SW (notification action clicks)
