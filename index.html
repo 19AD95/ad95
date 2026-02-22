@@ -177,7 +177,7 @@
   .theme-seg-btn{flex:1;padding:7px 10px;border-radius:7px;border:none;background:transparent;color:var(--muted);font-size:11px;font-family:var(--font-mono);font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
   .theme-seg-btn.active{background:var(--bg2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.18)}
   .empty-state{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.6}
-  .toast{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 18px;font-size:13px;font-family:var(--font-mono);color:var(--text);z-index:1000;white-space:nowrap;box-shadow:0 4px 24px rgba(0,0,0,.5);animation:toastIn .3s ease;pointer-events:none}
+  .toast{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 18px;font-size:13px;font-family:var(--font-mono);color:var(--text);z-index:1000;white-space:normal;max-width:calc(100vw - 40px);text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.5);animation:toastIn .3s ease;pointer-events:none}
 
   @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -3713,7 +3713,15 @@ async function ensureLogOutputPermission() {
       S._pendingLogOutputHandle = null;
       return true;
     }
-  } catch {}
+  } catch(e) {
+    // Stale handle — clear it so user gets prompted to re-pick
+    const isStale = e.message && e.message.includes('state had changed');
+    if (isStale) {
+      S._pendingLogOutputHandle = null;
+      await IDB.del('logOutputHandle').catch(()=>{});
+      LS.del('logOutputFolderName');
+    }
+  }
   return false;
 }
 
@@ -3800,7 +3808,7 @@ async function saveEvent(ev, oldFilename) {
     const fh = await S.eventsDirHandle.getFileHandle(filename, { create: true });
     const w = await fh.createWritable(); await w.write(content); await w.close();
     return true;
-  } catch (e) { showToast('Save failed: ' + e.message); return false; }
+  } catch (e) { showToast('\u26a0 Save failed'); return false; }
 }
 
 async function deleteEvent(filename) {
@@ -4097,7 +4105,35 @@ async function writeLogEntry(logText) {
     showToast('\u2713 Log saved');
   } catch(e) {
     console.error('Log folder write failed:', e);
-    showToast('\u26a0 Folder write failed: ' + (e.message || String(e)));
+    // Stale handle — the stored folder handle is no longer valid.
+    // Force user to re-pick the folder, then retry the write.
+    const isStale = e.message && e.message.includes('state had changed');
+    if (isStale) {
+      showToast('\u26a0 Log folder disconnected — please re-select it');
+      S.logOutputDirHandle = null;
+      S._pendingLogOutputHandle = null;
+      await IDB.del('logOutputHandle').catch(()=>{});
+      LS.del('logOutputFolderName');
+      // Prompt re-pick immediately (we're inside a user-gesture chain)
+      const ok = await pickLogOutputFolder();
+      if (ok) {
+        // Retry the write with the fresh handle
+        try {
+          let dir2 = S.logOutputDirHandle;
+          for (const seg of subDirs) dir2 = await dir2.getDirectoryHandle(seg, { create: true });
+          const fh2 = await dir2.getFileHandle(idbEntry.filename, { create: true });
+          const w2 = await fh2.createWritable();
+          await w2.write(newContent);
+          await w2.close();
+          showToast('\u2713 Log saved');
+        } catch(e2) {
+          console.error('Retry write failed:', e2);
+          showToast('\u26a0 Write failed after reconnect');
+        }
+      }
+    } else {
+      showToast('\u26a0 Write failed: ' + (e.name || 'error'));
+    }
   }
 
   return true;
@@ -4173,7 +4209,7 @@ function showLogTextPopup() {
     try {
       await writeLogEntry(text);
     } catch(e) {
-      showToast('⚠ Save error: ' + (e.message || String(e)));
+      showToast('⚠ Save error: ' + (e.name || 'error'));
       btn.disabled = false; btn.textContent = '✓ Save Log';
       return;
     }
@@ -4715,7 +4751,19 @@ function _openLogEditor(log) {
         await writeToFolder();
       } catch(e) {
         console.error('Folder log edit write failed:', e);
-        showToast('\u26a0 Saved to app only \u2014 folder write failed: ' + e.message);
+        const isStale = e.message && e.message.includes('state had changed');
+        if (isStale) {
+          showToast('\u26a0 Log folder disconnected — please re-select it');
+          S.logOutputDirHandle = null;
+          S._pendingLogOutputHandle = null;
+          await IDB.del('logOutputHandle').catch(()=>{});
+          LS.del('logOutputFolderName');
+          await pickLogOutputFolder();
+          // Retry
+          try { await writeToFolder(); } catch(e2) { showToast('\u26a0 Write failed after reconnect'); }
+        } else {
+          showToast('\u26a0 Edit write failed: ' + (e.name || 'error'));
+        }
       }
 
       // ── Update in-memory cache ──
@@ -4728,7 +4776,7 @@ function _openLogEditor(log) {
       close();
     } catch(e) {
       console.error('Save failed', e);
-      showToast('Save failed: ' + e.message);
+      showToast('\u26a0 Save failed');
       btn.disabled = false; btn.textContent = '✓ Save Changes';
     }
   });
