@@ -403,7 +403,7 @@ const IDB = (() => {
       if (!d.objectStoreNames.contains('kv'))   d.createObjectStore('kv');
       if (!d.objectStoreNames.contains('logs'))  d.createObjectStore('logs', { keyPath: 'id' });
     };
-    r.onsuccess = e => { db = e.target.result; res(db); };
+    r.onsuccess = e => { db = e.target.result; db.onclose = () => { db = null; }; res(db); };
     r.onerror = () => rej(r.error);
   });
   return {
@@ -434,50 +434,57 @@ const IDB = (() => {
         tx.onerror = () => rej(tx.error);
       });
     },
-    open, // expose open() for IDBLogs
+    open,
   };
 })();
 
 // ── IDB LOG STORE ──────────────────────────────────────────────────────────
-// Logs are saved here on ALL platforms (primary storage).
-// On desktop they are ALSO written to the output folder.
-// On Android the folder write silently fails — IDB is the only storage.
+// Logs saved here on ALL platforms. On desktop also written to folder.
+// On Android folder write silently fails — IDB is the only storage.
 const IDBLogs = {
   async save(log) {
-    const d = await IDB.open();
-    return new Promise((res,rej) => {
-      const tx = d.transaction('logs','readwrite');
-      tx.objectStore('logs').put(log);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => rej(tx.error);
-    });
+    try {
+      const d = await IDB.open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('logs','readwrite');
+        tx.objectStore('logs').put(log);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch(e) { console.warn('IDBLogs.save failed:', e); return false; }
   },
   async getAll() {
-    const d = await IDB.open();
-    return new Promise((res,rej) => {
-      const tx = d.transaction('logs','readonly');
-      const r = tx.objectStore('logs').getAll();
-      r.onsuccess = () => res(r.result || []);
-      r.onerror = () => rej(r.error);
-    });
+    try {
+      const d = await IDB.open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('logs','readonly');
+        const r = tx.objectStore('logs').getAll();
+        r.onsuccess = () => res(r.result || []);
+        r.onerror = () => rej(r.error);
+      });
+    } catch(e) { console.warn('IDBLogs.getAll failed:', e); return []; }
   },
   async get(id) {
-    const d = await IDB.open();
-    return new Promise((res,rej) => {
-      const tx = d.transaction('logs','readonly');
-      const r = tx.objectStore('logs').get(id);
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    });
+    try {
+      const d = await IDB.open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('logs','readonly');
+        const r = tx.objectStore('logs').get(id);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+    } catch(e) { console.warn('IDBLogs.get failed:', e); return null; }
   },
   async delete(id) {
-    const d = await IDB.open();
-    return new Promise((res,rej) => {
-      const tx = d.transaction('logs','readwrite');
-      tx.objectStore('logs').delete(id);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => rej(tx.error);
-    });
+    try {
+      const d = await IDB.open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('logs','readwrite');
+        tx.objectStore('logs').delete(id);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch(e) { console.warn('IDBLogs.delete failed:', e); return false; }
   },
 };
 

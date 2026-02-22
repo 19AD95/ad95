@@ -1,4 +1,4 @@
-const CACHE_NAME = 'habit-tracker-v13';
+const CACHE_NAME = 'habit-tracker-v14';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
 
 // ── INSTALL / ACTIVATE / FETCH (unchanged) ──────────────────────────────────
