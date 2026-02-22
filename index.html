@@ -394,53 +394,71 @@ const LS = {
   del: k => { try { localStorage.removeItem(k); } catch {} },
 };
 
-// ── FILE SYSTEM ACCESS API SUPPORT CHECK ───────────────────────────────────
-// The File System Access API (showDirectoryPicker, showOpenFilePicker,
-// createWritable, etc.) is NOT supported on Android Chrome. Attempting to use
-// or restore stored handles on Android throws a "state cached in an interface
-// object" error. This flag gates all FS Access calls so Android users get a
-// graceful fallback instead of a broken experience.
-const FS_ACCESS_SUPPORTED = typeof window.showDirectoryPicker === 'function' &&
-  typeof window.showOpenFilePicker === 'function';
-
 // ── IndexedDB — stores FileSystemDirectoryHandle (localStorage can't) ──────
 const IDB = (() => {
   let db = null;
+  // Always force-reopen if the cached connection is closed/invalidated.
+  // Browsers (especially Safari/iOS) kill the IDB connection when the page
+  // is backgrounded, causing "object is no longer usable" errors on reuse.
   const open = () => new Promise((res,rej) => {
-    if (db) { res(db); return; }
+    // If we have a cached db, test whether it's still alive by checking its
+    // internal state. If it has been closed, IDBDatabase.objectStoreNames will
+    // throw or the connection is in error state — safest check is to just try
+    // and catch InvalidStateError below. Reset on any such error.
+    if (db) {
+      try {
+        // A no-op probe: accessing objectStoreNames throws if db is closed
+        void db.objectStoreNames;
+        res(db); return;
+      } catch {
+        db = null; // stale — fall through to reopen
+      }
+    }
     const r = indexedDB.open('habit-tracker-v1', 1);
     r.onupgradeneeded = e => e.target.result.createObjectStore('kv');
-    r.onsuccess = e => { db = e.target.result; res(db); };
+    r.onsuccess = e => {
+      db = e.target.result;
+      // Listen for unexpected close so next call reopens cleanly
+      db.onclose = () => { db = null; };
+      db.onerror = () => { db = null; };
+      res(db);
+    };
     r.onerror = () => rej(r.error);
   });
+
+  // Wrap each operation with a retry: if we hit InvalidStateError the first
+  // time (stale connection slipped through), reset and try once more.
+  async function withRetry(fn) {
+    try {
+      return await fn(await open());
+    } catch(e) {
+      if (e && (e.name === 'InvalidStateError' || e.name === 'TransactionInactiveError')) {
+        db = null; // force fresh connection
+        return await fn(await open());
+      }
+      throw e;
+    }
+  }
+
   return {
-    set: async (k,v) => {
-      const d = await open();
-      return new Promise((res,rej) => {
-        const tx = d.transaction('kv','readwrite');
-        tx.objectStore('kv').put(v, k);
-        tx.oncomplete = () => res(true);
-        tx.onerror = () => rej(tx.error);
-      });
-    },
-    get: async (k) => {
-      const d = await open();
-      return new Promise((res,rej) => {
-        const tx = d.transaction('kv','readonly');
-        const r = tx.objectStore('kv').get(k);
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
-      });
-    },
-    del: async (k) => {
-      const d = await open();
-      return new Promise((res,rej) => {
-        const tx = d.transaction('kv','readwrite');
-        tx.objectStore('kv').delete(k);
-        tx.oncomplete = () => res(true);
-        tx.onerror = () => rej(tx.error);
-      });
-    },
+    set: (k,v) => withRetry(d => new Promise((res,rej) => {
+      const tx = d.transaction('kv','readwrite');
+      tx.objectStore('kv').put(v, k);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    })),
+    get: (k) => withRetry(d => new Promise((res,rej) => {
+      const tx = d.transaction('kv','readonly');
+      const r = tx.objectStore('kv').get(k);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    })),
+    del: (k) => withRetry(d => new Promise((res,rej) => {
+      const tx = d.transaction('kv','readwrite');
+      tx.objectStore('kv').delete(k);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    })),
   };
 })();
 
@@ -468,7 +486,6 @@ function fmtMs(ms) {
 
 // ── VAULT FOLDER ───────────────────────────────────────────────────────────
 async function pickVaultFolder() {
-  if (!FS_ACCESS_SUPPORTED) { showToast('File system access is not supported on this browser. Use desktop Chrome.'); return false; }
   try {
     const dh = await window.showDirectoryPicker({ mode:'readwrite', id:'vault' });
     S.vaultDirHandle = dh;
@@ -484,7 +501,6 @@ async function pickVaultFolder() {
 }
 
 async function restoreVaultHandle() {
-  if (!FS_ACCESS_SUPPORTED) return 'none';
   try {
     const dh = await IDB.get('vaultHandle');
     if (!dh) return 'none';
@@ -509,7 +525,6 @@ async function restoreVaultHandle() {
 }
 
 async function reconnectVault() {
-  if (!FS_ACCESS_SUPPORTED) return false;
   const dh = S._pendingHandle || await IDB.get('vaultHandle').catch(()=>null);
   if (!dh) { await pickVaultFolder(); return !!S.vaultDirHandle; }
   try {
@@ -601,7 +616,7 @@ async function loadHabitDataFromFile() {
 async function writeHabitData() {
   // Always save to localStorage immediately as backup
   LS.set('habitData_' + todayStr(), S.habitData);
-  if (!FS_ACCESS_SUPPORTED || !S.vaultDirHandle || !S.config) return;
+  if (!S.vaultDirHandle || !S.config) return;
   try {
     const dataDir = await getDataDir();
     if (!dataDir) return;
@@ -3429,7 +3444,7 @@ async function saveScheduleToVault() {
   LS.set('lastConfig', S.config);
   LS.set('lastScheduleEdit', Date.now());
 
-  if (!FS_ACCESS_SUPPORTED || !S.vaultDirHandle || !S.config) return;
+  if (!S.vaultDirHandle || !S.config) return;
   try {
     // Find the config .md file
     for await (const entry of S.vaultDirHandle.values()) {
@@ -3612,7 +3627,6 @@ function applyDateFormat(template, d) {
 
 
 async function pickLogTemplateFile() {
-  if (!FS_ACCESS_SUPPORTED) { showToast('File system access is not supported on this browser. Use desktop Chrome.'); return false; }
   try {
     // showOpenFilePicker lets user select a single .md file
     const [fh] = await window.showOpenFilePicker({
@@ -3632,7 +3646,6 @@ async function pickLogTemplateFile() {
 }
 
 async function restoreLogTemplateHandle() {
-  if (!FS_ACCESS_SUPPORTED) return;
   try {
     const fh = await IDB.get('logTemplateHandle');
     if (!fh) return;
@@ -3644,7 +3657,6 @@ async function restoreLogTemplateHandle() {
 }
 
 async function restoreLogOutputHandle() {
-  if (!FS_ACCESS_SUPPORTED) return;
   try {
     const dh = await IDB.get('logOutputHandle');
     if (!dh) return;
@@ -3654,7 +3666,6 @@ async function restoreLogOutputHandle() {
 }
 
 async function pickLogOutputFolder() {
-  if (!FS_ACCESS_SUPPORTED) { showToast('File system access is not supported on this browser. Use desktop Chrome.'); return false; }
   try {
     const dh = await window.showDirectoryPicker({ mode: 'readwrite', id: 'logOutput' });
     S.logOutputDirHandle = dh;
@@ -3673,7 +3684,6 @@ async function pickLogOutputFolder() {
 // Each file has YAML frontmatter: title, date (YYYY-MM-DD), time (HH:MM optional), note
 
 async function pickEventsFolder() {
-  if (!FS_ACCESS_SUPPORTED) { showToast('File system access is not supported on this browser. Use desktop Chrome.'); return false; }
   try {
     const dh = await window.showDirectoryPicker({ mode: 'readwrite' });
     S.eventsDirHandle = dh;
@@ -3686,7 +3696,6 @@ async function pickEventsFolder() {
 }
 
 async function restoreEventsHandle() {
-  if (!FS_ACCESS_SUPPORTED) return;
   try {
     const dh = await IDB.get('eventsHandle');
     if (!dh) return;
@@ -3901,7 +3910,6 @@ async function renderEventsCard() {
 // ── END EVENTS SYSTEM ──────────────────────────────────────────────────────
 
 async function reconnectLogTemplate() {
-  if (!FS_ACCESS_SUPPORTED) return false;
   const fh = S._pendingLogHandle || await IDB.get('logTemplateHandle').catch(()=>null);
   if (!fh) return false;
   try {
@@ -3941,10 +3949,6 @@ function fmtTimeHMA(d) {
 }
 
 async function writeLogEntry(logText) {
-  if (!FS_ACCESS_SUPPORTED) {
-    showToast('Log saving is not supported on this browser. Use desktop Chrome.');
-    return false;
-  }
   const now = new Date();
   const dateStr = fmtDateYMD(now);     // YYYY-MM-DD
   const timeStr = fmtTimeHMA(now);     // hh:mm am/pm
@@ -4709,10 +4713,6 @@ function showSettings() {
     </div>`;
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
-  const fsUnsupportedNotice = `<div style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.25);border-radius:10px;padding:11px 14px;font-size:12px;font-family:var(--font-mono);color:var(--warn);line-height:1.7;margin-top:8px">⚠ File system access is not supported on Android Chrome.<br><span style="color:var(--muted)">Use this app on desktop Chrome to connect folders and save logs.</span></div>`;
-  const filePickerBtn = (id, label) => FS_ACCESS_SUPPORTED
-    ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px" id="${id}">${label}</button>`
-    : fsUnsupportedNotice;
   const backupSection = `<div class="s-section">
       <div class="s-section-title">Schedule Backups</div>
       <div class="s-row">
@@ -4781,7 +4781,7 @@ function showSettings() {
         <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">📄 .md config in root · 📁 data/ for daily habit files</div></div>
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
-      ${filePickerBtn('s-change-vault', 'Change Habit Tracker Folder')}
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Habit Tracker Folder</button>
     </div>
 
     <div class="s-section">
@@ -4793,7 +4793,7 @@ function showSettings() {
         </div>
         <span class="pill ${S.eventsDirHandle?'pill-green':'pill-amber'}">${S.eventsDirHandle?'SET':'UNSET'}</span>
       </div>
-      ${filePickerBtn('s-set-events', 'Set Events Folder')}
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-events">Set Events Folder</button>
     </div>
 
     <div class="s-section">
@@ -4805,7 +4805,7 @@ function showSettings() {
         </div>
         <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'SET':'UNSET'}</span>
       </div>
-      ${filePickerBtn('s-set-log-template', 'Set Log Template File')}
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-template">Set Log Template File</button>
       <div class="s-row" style="margin-top:10px">
         <div>
           <div class="s-label">📁 Output: ${LS.get('logOutputFolderName') || 'Not set'}</div>
@@ -4813,7 +4813,7 @@ function showSettings() {
         </div>
         <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'SET':'UNSET'}</span>
       </div>
-      ${filePickerBtn('s-set-log-output', 'Set Log Output Folder')}
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-set-log-output">Set Log Output Folder</button>
       <div class="s-row" style="margin-top:10px;flex-direction:column;align-items:stretch;gap:6px">
         <div>
           <div class="s-label">📂 Output File Format</div>
@@ -4847,10 +4847,10 @@ function showSettings() {
   const close=()=>document.body.removeChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
-  ov.querySelector('#s-change-vault')?.addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
+  ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
   ov.querySelector('#s-set-events')?.addEventListener('click', async () => { close(); await pickEventsFolder(); renderEventsCard(); showSettings(); });
-  ov.querySelector('#s-set-log-template')?.addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
-  ov.querySelector('#s-set-log-output')?.addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
+  ov.querySelector('#s-set-log-template').addEventListener('click',async()=>{ close(); await pickLogTemplateFile(); showSettings(); });
+  ov.querySelector('#s-set-log-output').addEventListener('click',async()=>{ close(); await pickLogOutputFolder(); showSettings(); });
 
   // ── Output format live preview + save ──
   const fmtIn = ov.querySelector('#s-log-fmt');
@@ -5582,6 +5582,18 @@ async function boot() {
 }
 
 boot();
+
+// ── Reset stale permission cache when app comes back from background ─────────
+// On iOS Safari and some Android browsers, File System Access handles become
+// "not usable" after the page is hidden (backgrounded). Clearing the per-session
+// _permGranted flags here forces a fresh requestPermission() call on next write,
+// preventing the "attempt was made on an object that is not, or is no longer,
+// usable" error without needing to re-pick files.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    S._permGranted = { logTemplate: false, logOutput: false, events: false };
+  }
+});
 
 // Prevent pull-to-refresh (overscroll-behavior covers Chrome; this covers iOS Safari)
 document.addEventListener('touchmove', e => {
