@@ -3980,8 +3980,10 @@ async function writeLogEntry(logText) {
   const sanitizedLog = sanitizeForYAML(cleaned);
   const finalTags = tags.length ? tags : ['explore'];
 
-  // ── Build content (from template if available, otherwise minimal YAML) ──
+  // ── Build content ──
   let newContent;
+
+  // Try template first
   if (S.logTemplateHandle) {
     try {
       const perm = await S.logTemplateHandle.requestPermission({ mode: 'read' });
@@ -3995,91 +3997,97 @@ async function writeLogEntry(logText) {
         if (fmMatch) {
           const [, open, yaml, close, body] = fmMatch;
           let yamlLines = yaml.split('\n');
+          // Remove existing log: and tags: blocks
           const logIdx = yamlLines.findIndex(l => l.startsWith('log:'));
           if (logIdx !== -1) yamlLines[logIdx] = `log: ${sanitizedLog}`;
           else yamlLines.push(`log: ${sanitizedLog}`);
           const tagsIdx = yamlLines.findIndex(l => l.trim() === 'tags:');
-          let existingTags = [];
           if (tagsIdx !== -1) {
-            let i = tagsIdx + 1;
-            while (i < yamlLines.length && yamlLines[i].trim().startsWith('- ')) {
-              existingTags.push(yamlLines[i].trim().replace(/^- /, '')); i++;
-            }
-            yamlLines.splice(tagsIdx, existingTags.length + 1);
+            let end2 = tagsIdx + 1;
+            while (end2 < yamlLines.length && /^\s+-/.test(yamlLines[end2])) end2++;
+            yamlLines.splice(tagsIdx, end2 - tagsIdx);
           }
-          const mergedTags = [...new Set([...existingTags, ...finalTags])];
-          const logIdx2 = yamlLines.findIndex(l => l.startsWith('log:'));
-          const insertAt = logIdx2 !== -1 ? logIdx2 : yamlLines.length;
-          yamlLines.splice(insertAt, 0, 'tags:', ...mergedTags.map(t => `  - ${t}`));
+          yamlLines.push('tags:', ...finalTags.map(t => `  - ${t}`));
           newContent = open + yamlLines.join('\n') + close + body;
         }
       }
-    } catch {}
-  }
-  // Fallback: build minimal content without template
-  if (!newContent) {
-    newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n`;
+    } catch(e) { console.warn('Template read failed:', e); }
   }
 
-  // ── Generate a unique ID/filename ──
-  const ts = now.toISOString().replace(/[-:.TZ]/g,'').slice(0,14);
+  // Fallback: minimal YAML
+  if (!newContent) {
+    newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t => `  - ${t}`).join('\n')}\n---\n`;
+  }
+
+  // ── Generate filename ──
+  const ts = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const fmt = LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
   const basePath = applyDateFormat(fmt, now);
-  const parts = basePath.split('/');
-  const baseFilename = (parts.pop() || ts) + '.md';
-  const id = ts + '_' + Math.random().toString(36).slice(2,6);
+  const pathParts = basePath.split('/');
+  const baseFilename = (pathParts.pop() || ts) + '.md';
+  const subDirs = pathParts.filter(Boolean);
+  const id = ts + '_' + Math.random().toString(36).slice(2, 6);
 
-  // ── 1. Save to IDB immediately (works on all platforms) ──
+  // ── Save to IDB ──
   const idbEntry = {
     id,
     filename: baseFilename,
-    path: basePath + '.md',
+    path: [...subDirs, baseFilename].join('/'),
     content: newContent,
     preview: sanitizedLog.slice(0, 120),
     tags: finalTags,
     dateLabel: _filenameToLabel(baseFilename),
     ts: now.getTime(),
   };
-  try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB log save failed:', e); }
+  try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB save failed:', e); }
 
-  // ── 2. Attempt folder write ──
-  if (S.logOutputDirHandle) {
-    try {
-      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') throw new Error('Permission denied for log output folder');
+  // ── Write to folder ──
+  if (!S.logOutputDirHandle) {
+    showToast('⚠ No output folder set — log saved in app only');
+    return true;
+  }
 
-      const subDirs = basePath.split('/').slice(0, -1);
-      let dir = S.logOutputDirHandle;
-      for (const seg of subDirs) {
-        if (seg) dir = await dir.getDirectoryHandle(seg, { create: true });
-      }
-
-      // Find a unique filename (avoid overwriting existing files)
-      let filename = baseFilename;
-      let suffix = 0;
-      for (;;) {
-        let exists = false;
-        try { await dir.getFileHandle(filename, { create: false }); exists = true; } catch {}
-        if (!exists) break;
-        suffix++;
-        const dot = baseFilename.lastIndexOf('.');
-        filename = baseFilename.slice(0, dot) + String(suffix).padStart(2, '0') + baseFilename.slice(dot);
-      }
-
-      // Get handle, open writable with keepExistingData:false to guarantee truncation, write, close
-      const fh = await dir.getFileHandle(filename, { create: true });
-      const w = await fh.createWritable({ keepExistingData: false });
-      await w.write(newContent);
-      await w.close();
-
-      // Update IDB entry with the actual filename used
-      idbEntry.filename = filename;
-      idbEntry.path = [...subDirs, filename].filter(Boolean).join('/');
-      await IDBLogs.save(idbEntry);
-    } catch(e) {
-      console.error('Folder log write failed:', e);
-      showToast('\u26a0 Log saved to app only \u2014 folder write failed: ' + e.message);
+  try {
+    // Request permission
+    const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      showToast('⚠ Folder permission denied — log saved in app only');
+      return true;
     }
+
+    // Navigate / create subdirectories
+    let dir = S.logOutputDirHandle;
+    for (const seg of subDirs) {
+      dir = await dir.getDirectoryHandle(seg, { create: true });
+    }
+
+    // Find unique filename
+    let filename = baseFilename;
+    let suffix = 0;
+    for (;;) {
+      let exists = false;
+      try { await dir.getFileHandle(filename, { create: false }); exists = true; } catch {}
+      if (!exists) break;
+      suffix++;
+      const dot = baseFilename.lastIndexOf('.');
+      filename = baseFilename.slice(0, dot) + '_' + suffix + baseFilename.slice(dot);
+    }
+
+    // Write file
+    const fh = await dir.getFileHandle(filename, { create: true });
+    const writable = await fh.createWritable({ keepExistingData: false });
+    await writable.write(newContent);
+    await writable.close();
+
+    // Update IDB with actual filename
+    idbEntry.filename = filename;
+    idbEntry.path = [...subDirs, filename].join('/');
+    await IDBLogs.save(idbEntry);
+
+  } catch(e) {
+    console.error('Folder write failed:', e);
+    showToast('⚠ Folder write failed: ' + (e.message || String(e)));
+    return true;
   }
 
   return true;
@@ -4151,13 +4159,14 @@ function showLogTextPopup() {
     if (!text) { showToast('Write something first'); return; }
     const btn = ov.querySelector('#log-ok');
     btn.disabled = true; btn.textContent = 'Saving…';
-    const ok = await writeLogEntry(text);
-    if (ok) {
-      showToast('✓ Log saved');
-      close();
-    } else {
+    try {
+      await writeLogEntry(text);
+    } catch(e) {
+      showToast('⚠ Save error: ' + (e.message || String(e)));
       btn.disabled = false; btn.textContent = '✓ Save Log';
+      return;
     }
+    close();
   });
 
   setTimeout(() => textarea.focus(), 100);
