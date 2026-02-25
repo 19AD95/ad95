@@ -33,8 +33,8 @@
 
   header{padding:20px 20px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-shrink:0}
   .header-left{display:flex;flex-direction:column;gap:2px}
-  .header-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
-  .header-date{font-size:11px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+  .header-title{font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .header-date{font-size:12px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px}
   .header-actions{display:flex;gap:8px}
   .icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
   .icon-btn:active{transform:scale(.92);background:var(--bg3)}
@@ -45,7 +45,7 @@
   .card-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
   .card-header.clickable{cursor:pointer;user-select:none;border-bottom:none}
   .card-header.clickable:active{background:var(--bg3)}
-  .card-label{font-size:10px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)}
+  .card-label{font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)}
   .card-body{padding:16px}
   .card-body.collapsed{display:none}
   .collapse-arrow{font-size:11px;color:var(--muted);transition:transform .25s;display:inline-block;font-family:var(--font-mono)}
@@ -53,10 +53,11 @@
 
   /* countdown */
   .cw{display:flex;flex-direction:column;gap:10px}
-  .ca{font-size:17px;font-weight:700;line-height:1.3}
+  .ca{font-size:19px;font-weight:700;line-height:1.3}
   .cm{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-  .cl{font-size:11px;font-family:var(--font-mono);color:var(--muted)}
-  .ct{font-size:36px;font-weight:800;font-family:var(--font-mono);color:var(--accent);letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+  .cl{font-size:13px;font-family:var(--font-mono);color:var(--muted)}
+  .ct{font-size:42px;font-weight:800;font-family:var(--font-mono);color:#4a9eff;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+  .ct.active{color:var(--accent)}
   .ct.urgent{color:var(--warn);animation:pulse 1s ease infinite}
   .pb-wrap{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
   .pb-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 1s linear}
@@ -74,7 +75,7 @@
   .habit-icon{font-size:26px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1);user-select:none;line-height:1;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2);position:relative;flex-shrink:0}
   .habit-icon.complete{border-color:rgba(0,255,136,.4);background:rgba(0,255,136,.06)}
   .habit-icon:active{transform:scale(1.25)}
-  .habit-val{font-size:9px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);padding:1px 4px;border-radius:10px}
+  .habit-val{font-size:10px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);padding:1px 4px;border-radius:10px}
   .habit-val.complete{color:var(--accent)}
   /* habit edit mode */
   .habit-remove-btn{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;font-weight:700;border:2px solid var(--bg2);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35)}
@@ -330,7 +331,7 @@
   /* Bottom half sub-tabs */
   .cal-bottom{display:flex;flex-direction:column;flex:1;min-height:180px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden}
   .cal-sub-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg)}
-  .cal-sub-tab{flex:1;padding:9px 4px;font-size:10px;font-family:var(--font-mono);font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .18s}
+  .cal-sub-tab{flex:1;padding:9px 4px;font-size:11px;font-family:var(--font-mono);font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .18s}
   .cal-sub-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
   .cal-sub-tab:active{background:var(--bg3)}
   /* ── Time Blocks top-level tab bar ── */
@@ -348,27 +349,27 @@
   .today-sched-ov{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:900;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn .2s ease}
   .today-sched-sheet{background:var(--bg2);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:88dvh;display:flex;flex-direction:column;animation:slideUp .28s cubic-bezier(.34,1.2,.64,1)}
   .today-sched-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;flex-shrink:0;border-bottom:1px solid var(--border)}
-  .today-sched-title{font-size:16px;font-weight:800;letter-spacing:-.3px}
+  .today-sched-title{font-size:18px;font-weight:800;letter-spacing:-.3px}
   .today-sched-close{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .today-sched-body{flex:1;overflow-y:auto;padding:10px 16px calc(20px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch}
-  .tsched-section-label{font-size:9px;font-family:var(--font-mono);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:12px 0 6px 2px}
-  .tsched-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:1px solid var(--border);background:var(--bg3);margin-bottom:5px;cursor:pointer;transition:background .12s}
+  .tsched-section-label{font-size:10px;font-family:var(--font-mono);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:12px 0 6px 2px}
+  .tsched-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--bg3);margin-bottom:5px;cursor:pointer;transition:background .12s}
   .tsched-item.now{border-color:rgba(0,255,136,.4);background:rgba(0,255,136,.08)}
   .tsched-item.past{opacity:.38}
   .tsched-item:active{background:var(--border)}
-  .tsched-time{font-size:11px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:58px;flex-shrink:0}
-  .tsched-act{font-size:13px;font-weight:600;flex:1;color:var(--text);line-height:1.3}
-  .tsched-badge{font-size:9px;font-family:var(--font-mono);color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;flex-shrink:0}
-  .tsched-now-pill{display:inline-flex;align-items:center;background:rgba(0,255,136,.18);border:1px solid rgba(0,255,136,.35);border-radius:6px;padding:1px 7px;font-size:9px;font-family:var(--font-mono);font-weight:800;color:var(--accent);letter-spacing:.5px;flex-shrink:0}
+  .tsched-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:58px;flex-shrink:0}
+  .tsched-act{font-size:15px;font-weight:600;flex:1;color:var(--text);line-height:1.3}
+  .tsched-badge{font-size:10px;font-family:var(--font-mono);color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;flex-shrink:0}
+  .tsched-now-pill{display:inline-flex;align-items:center;background:rgba(0,255,136,.18);border:1px solid rgba(0,255,136,.35);border-radius:6px;padding:2px 8px;font-size:10px;font-family:var(--font-mono);font-weight:800;color:var(--accent);letter-spacing:.5px;flex-shrink:0}
   /* ── Routine / Focused list ── */
   .tb-list{display:flex;flex-direction:column;gap:6px}
   .tb-list-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--bg2);transition:background .12s;cursor:default}
   .tb-list-item.now-item{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.07)}
   .tb-list-item.past-item{opacity:.38}
   .tb-list-item:active{background:var(--bg3)}
-  .tb-item-time{font-size:11px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
-  .tb-item-act{font-size:13px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
-  .tb-item-badge{font-size:9px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .tb-item-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
+  .tb-item-act{font-size:15px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
+  .tb-item-badge{font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
   .tb-action-btn{width:28px;height:28px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-size:13px;transition:all .12s;border:1px solid var(--border);background:var(--bg3);color:var(--muted)}
   .tb-action-btn.del{border-color:rgba(255,68,102,.3);background:rgba(255,68,102,.08);color:var(--danger)}
   .cal-sub-content{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 12px 16px;-webkit-overflow-scrolling:touch}
@@ -376,10 +377,10 @@
   .cal-sub-item.now-item{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.07)}
   .cal-sub-item.past-item{opacity:.38}
   .cal-sub-item:active{background:var(--border)}
-  .cal-sub-time{font-size:11px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
-  .cal-sub-act{font-size:13px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
-  .cal-sub-repeat{font-size:9px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
-  .cal-sub-empty{text-align:center;padding:28px 16px;color:var(--muted);font-size:12px;font-family:var(--font-mono);line-height:1.7}
+  .cal-sub-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
+  .cal-sub-act{font-size:15px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
+  .cal-sub-repeat{font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .cal-sub-empty{text-align:center;padding:28px 16px;color:var(--muted);font-size:13px;font-family:var(--font-mono);line-height:1.7}
   .cal-selected-bar{padding:7px 12px 5px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--font-mono);color:var(--accent);display:flex;align-items:center;gap:6px;flex-shrink:0;background:rgba(0,255,136,.04)}
   .cal-heat-legend{display:flex;gap:4px;align-items:center;font-size:9px;font-family:var(--font-mono);color:var(--muted);margin-top:8px;flex-wrap:wrap}
   .cal-heat-swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0}
@@ -1428,14 +1429,14 @@ function renderCountdown() {
     if (next === -1) {
       // Last task — show task + time remaining in it
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct active${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
         <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${Math.max(0,Math.min(100,100-(rem/((ci.duration||30)*60000))*100))}%"></div></div></div>`;
     } else {
       const ni = todaySched[next];
       const span = schedDate(ni.time) - taskStart;
       const pct  = Math.max(0, Math.min(100, 100 - (rem / ((ci.duration||30)*60000) * 100)));
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct active${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
         <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div>
         <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:6px">Next: ${ni.activity} at ${ni.time}</div>
         </div>`;
@@ -5465,18 +5466,6 @@ function showSettings() {
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">Daily Log</div>
-      <div class="s-row" style="flex-direction:column;align-items:stretch;gap:6px">
-        <div>
-          <div class="s-label">📂 Output File Format</div>
-          <div class="s-sub">Obsidian-style date tokens. Use / for subfolders.</div>
-        </div>
-        <input class="fmt-input" id="s-log-fmt" type="text" value="${LS.get('logOutputFormat') || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}'}" placeholder="{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}" autocomplete="off" spellcheck="false"/>
-        <div class="fmt-hint">Tokens: {{date:YYYY}} {{date:MM}} {{date:DD}} {{date:HH}} {{date:mm}} {{date:ss}}<br>Example → <span id="s-fmt-preview"></span></div>
-      </div>
-    </div>
-
-    <div class="s-section">
       <div class="s-section-title">Notifications</div>
       ${notifSection}
     </div>
@@ -5492,22 +5481,6 @@ function showSettings() {
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
 
 
-  // ── Output format live preview + save ──
-  const fmtIn = ov.querySelector('#s-log-fmt');
-  const fmtPrev = ov.querySelector('#s-fmt-preview');
-  function updateFmtPreview() {
-    const raw = fmtIn.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}';
-    try {
-      const preview = applyDateFormat(raw, new Date()) + '.md';
-      fmtPrev.textContent = preview;
-      fmtPrev.style.color = 'var(--accent)';
-    } catch { fmtPrev.textContent = 'invalid format'; fmtPrev.style.color = 'var(--danger)'; }
-  }
-  updateFmtPreview();
-  fmtIn.addEventListener('input', () => {
-    updateFmtPreview();
-    LS.set('logOutputFormat', fmtIn.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}');
-  });
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
   // Battery optimization buttons
   ov.querySelector('#s-battery-open')?.addEventListener('click',()=>{
@@ -5807,20 +5780,6 @@ function showTodaySchedulePopup() {
     } catch { return 0; }
   });
 
-  // ── Determine current item index across timeline (duration-aware) ──
-  // An item is "current" if now is inside [start, start+duration)
-  // If between tasks, cur = most recently passed item, but not "inside" it
-  let curTimelineIdx = -1;
-  let insideTask = false;
-  timelineItems.forEach((item, i) => {
-    if (!item.time) return;
-    const start = schedDate(item.time);
-    const dur   = (item.duration || 30) * 60000;
-    const end   = new Date(start.getTime() + dur);
-    if (now >= start && now < end) { curTimelineIdx = i; insideTask = true; }
-    else if (now >= end && !insideTask) curTimelineIdx = i; // passed this task
-  });
-
   // ── Build popup ──
   const ov = document.createElement('div');
   ov.className = 'today-sched-ov';
@@ -5838,13 +5797,9 @@ function showTodaySchedulePopup() {
   // Header
   const hdr = document.createElement('div');
   hdr.className = 'today-sched-hdr';
-  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const mNames   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dNow = new Date();
   hdr.innerHTML = `
     <div>
       <div class="today-sched-title">⏰ Today's Schedule</div>
-      <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-top:2px">${dayNames[dNow.getDay()]}, ${mNames[dNow.getMonth()]} ${dNow.getDate()}</div>
     </div>`;
   const closeBtn = document.createElement('button');
   closeBtn.className = 'today-sched-close';
@@ -5861,9 +5816,10 @@ function showTodaySchedulePopup() {
   // ── Render timeline ──
   function renderItem(item, idx, isFocused) {
     const row = document.createElement('div');
-    const taskEnd = item.time ? new Date(schedDate(item.time).getTime() + (item.duration||30)*60000) : null;
-    const isPast  = !isFocused && taskEnd && taskEnd < now && idx !== curTimelineIdx;
-    const isCur   = !isFocused && idx === curTimelineIdx && insideTask;
+    const start  = item.time ? schedDate(item.time) : null;
+    const taskEnd = start ? new Date(start.getTime() + (item.duration || 30) * 60000) : null;
+    const isCur  = !isFocused && start && now >= start && taskEnd && now < taskEnd;
+    const isPast = !isFocused && taskEnd && now >= taskEnd;
     row.className = `tsched-item${isCur ? ' now' : ''}${isPast ? ' past' : ''}`;
 
     const timeSpan = document.createElement('span');
@@ -5879,14 +5835,6 @@ function showTodaySchedulePopup() {
     actSpan.className = 'tsched-act';
     actSpan.textContent = item.activity;
 
-    const typeEmoji = item.blockType === 'routine' ? '🔄'
-                    : item.blockType === 'scheduled' ? '📌'
-                    : item.blockType === 'open' ? '🌀'
-                    : '';
-    const badge = document.createElement('span');
-    badge.className = 'tsched-badge';
-    badge.textContent = typeEmoji || (item.repeat === 'daily' ? '🔄' : '📌');
-
     row.appendChild(timeSpan);
     row.appendChild(actSpan);
 
@@ -5895,8 +5843,6 @@ function showTodaySchedulePopup() {
       nowPill.className = 'tsched-now-pill';
       nowPill.textContent = 'NOW';
       row.appendChild(nowPill);
-    } else {
-      row.appendChild(badge);
     }
 
     // Tap to log habit
