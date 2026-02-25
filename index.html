@@ -393,7 +393,6 @@
       <div class="header-date" id="header-date"></div>
     </div>
     <div class="header-actions">
-      <button class="pomo-btn" id="pomo-btn-header" title="Focus Timer" style="width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"><div class="pomo-dot"></div></button>
       <button class="icon-btn" id="btn-reload" title="Reload">↺</button>
       <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
     </div>
@@ -1429,15 +1428,17 @@ function renderCountdown() {
     if (next === -1) {
       // Last task — show task + time remaining in it
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-        <div class="cm"><span class="cl">Ends in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
         <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${Math.max(0,Math.min(100,100-(rem/((ci.duration||30)*60000))*100))}%"></div></div></div>`;
     } else {
-      const ni = todaySched[next], remNext = schedDate(ni.time) - Date.now();
+      const ni = todaySched[next];
       const span = schedDate(ni.time) - taskStart;
-      const pct  = Math.max(0, Math.min(100, 100 - (remNext / span * 100)));
+      const pct  = Math.max(0, Math.min(100, 100 - (rem / ((ci.duration||30)*60000) * 100)));
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
-        <div class="cm"><span class="cl">Next: ${ni.time}</span><span class="ct${remNext<60000?' urgent':''}" id="main-timer">${fmtMs(remNext)}</span></div>
-        <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div></div>`;
+        <div class="cm"><span class="cl">Remaining Time:</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+        <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div>
+        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-top:6px">Next: ${ni.activity} at ${ni.time}</div>
+        </div>`;
     }
     return;
   }
@@ -1450,7 +1451,7 @@ function renderCountdown() {
     left.innerHTML = `<div class="cw">
       ${ci ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">✓ ${ci.activity}</div>` : ''}
       <div class="ca" style="font-size:14px;margin-top:${ci?'6px':'0'}">Up next: ${ni.activity}</div>
-      <div class="cm"><span class="cl">Starts in</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
+      <div class="cm"><span class="cl">Starts In</span><span class="ct${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
       <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:0%"></div></div>
     </div>`;
     return;
@@ -1547,20 +1548,16 @@ function tickCountdown() {
 
   const {cur, next} = getCurNext();
 
-  // Inside a running task: count down to task end (or next task start if sooner)
+  // Inside a running task: count down to task end
   if (isInsideTask(todaySched, cur)) {
     const ci       = todaySched[cur];
     const taskEnd  = new Date(schedDate(ci.time).getTime() + (ci.duration||30)*60000);
-    const target   = next !== -1 ? schedDate(todaySched[next].time) : taskEnd;
-    const rem      = target - Date.now();
+    const rem      = taskEnd - Date.now();
     if (rem <= 0) { renderCountdown(); return; }
     tEl.textContent = fmtMs(rem);
     rem < 60000 ? tEl.classList.add('urgent') : tEl.classList.remove('urgent');
     const prog = document.getElementById('prog-bar');
-    if (prog && next !== -1) {
-      const span = schedDate(todaySched[next].time) - schedDate(ci.time);
-      prog.style.width = Math.max(0, Math.min(100, 100-(rem/span*100))) + '%';
-    } else if (prog) {
+    if (prog) {
       const total = (ci.duration||30)*60000;
       prog.style.width = Math.max(0, Math.min(100, 100-((taskEnd-Date.now())/total*100))) + '%';
     }
@@ -2668,13 +2665,12 @@ function renderScheduleTab() {
   el.style.paddingBottom = '80px';
 
   // ── Top-level TB tab bar ──
-  if (!['routine','scheduled','focused'].includes(_tbTab)) _tbTab = 'routine';
+  if (!['routine','scheduled'].includes(_tbTab)) _tbTab = 'routine';
   const tabBar = document.createElement('div');
   tabBar.className = 'tb-tabs';
   const tbDefs = [
     { id:'routine',   label:'🔄 Daily Routine' },
     { id:'scheduled', label:'📌 Scheduled' },
-    { id:'focused',   label:'🌀 Focused Work' },
   ];
   tbDefs.forEach(t => {
     const btn = document.createElement('button');
@@ -2701,7 +2697,6 @@ function renderScheduleTab() {
   // ── Render the active tab content ──
   if (_tbTab === 'routine')   renderRoutineTab(el);
   else if (_tbTab === 'scheduled') renderScheduledTab(el);
-  else renderFocusedTab(el);
 }
 function renderTBList(container, items, emptyMsg, emptyIcon) {
   container.innerHTML = '';
@@ -5416,7 +5411,6 @@ function showSettings() {
         <div><div class="s-label">Background Alarms</div><div class="s-sub">Chrome → Battery → Unrestricted</div></div>
         <span class="pill pill-green">SET ✓</span>
       </div>
-      <button class="btn btn-ghost" id="s-battery-reset" style="width:100%;margin-top:8px;font-size:13px">Show instructions again</button>
     </div>` : '';
 
   const notifSection = notifBlocked ? `
@@ -5462,66 +5456,12 @@ function showSettings() {
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">▶ Focus Timer</div>
-      <div class="s-row">
-        <div><div class="s-label">Focus selector range</div><div class="s-sub">Max minutes shown in the Focus drum</div></div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <input type="number" id="s-pomo-focus-max" min="1" max="120" value="${pomoGetSettings().focusMaxMins || 60}" style="width:56px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:14px;font-weight:700;text-align:center;outline:none"/>
-          <span style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">min</span>
-        </div>
-      </div>
-      <div class="s-row">
-        <div><div class="s-label">Break selector range</div><div class="s-sub">Max minutes shown in the Break drum</div></div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <input type="number" id="s-pomo-break-max" min="1" max="60" value="${pomoGetSettings().breakMaxMins || 15}" style="width:56px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:14px;font-weight:700;text-align:center;outline:none"/>
-          <span style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">min</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="s-section">
       <div class="s-section-title">Vault Folder</div>
       <div class="s-row">
         <div><div class="s-label">📁 ${vaultName}</div><div class="s-sub">All subfolders are derived automatically from this vault root</div></div>
         <span class="pill ${vaultOk?'pill-green':'pill-amber'}">${vaultOk?'LIVE':'OFFLINE'}</span>
       </div>
       <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="s-change-vault">Change Vault Folder</button>
-    </div>
-
-    <div class="s-section">
-      <div class="s-section-title">📂 Vault File Structure</div>
-      <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;line-height:2.2">
-        <div style="color:var(--accent);font-weight:700;margin-bottom:4px">📁 ${vaultName}/0 - Personal Space/</div>
-        <div style="padding-left:12px">📁 <b style="color:var(--text)">Time Blocks/</b> <span style="color:var(--muted)">— schedule source files</span></div>
-        <div style="padding-left:24px;font-size:10px;line-height:1.9">
-          <div>📄 <span style="color:var(--text)">Daily Routine.md</span> <span style="color:var(--muted)">— daily-routine: entries</span></div>
-          <div>📄 <span style="color:var(--text)">Scheduled Event.md</span> <span style="color:var(--muted)">— scheduled-event: entries</span></div>
-          <div>📄 <span style="color:var(--text)">Focused Work.md</span> <span style="color:var(--muted)">— focused-work: entries</span></div>
-        </div>
-        <div style="padding-left:12px;margin-top:4px">📁 <b style="color:var(--text)">Habit Tracker/</b></div>
-        <div style="padding-left:24px;font-size:10px;line-height:1.9">
-          <div>📄 <span style="color:var(--text)">Habit Tracker.md</span> <span style="color:var(--muted)">— habit-definition & habit-tracker config</span></div>
-          <div>📁 <span style="color:var(--text)">data/</span> <span style="color:var(--muted)">— daily habit log files</span></div>
-        </div>
-        <div style="padding-left:12px;margin-top:4px">📁 <b style="color:var(--text)">Chrono Log/data/</b> <span style="color:var(--muted)">— daily log output</span></div>
-
-      </div>
-      <div class="s-row" style="margin-top:10px">
-        <div><div class="s-label">Habit Tracker</div></div>
-        <span class="pill ${S.habitTrackerDirHandle?'pill-green':'pill-amber'}">${S.habitTrackerDirHandle?'✓':'–'}</span>
-      </div>
-      <div class="s-row">
-        <div><div class="s-label">Log Output</div></div>
-        <span class="pill ${S.logOutputDirHandle?'pill-green':'pill-amber'}">${S.logOutputDirHandle?'✓':'–'}</span>
-      </div>
-      <div class="s-row">
-        <div><div class="s-label">Log Template</div></div>
-        <span class="pill ${S.logTemplateHandle?'pill-green':'pill-amber'}">${S.logTemplateHandle?'✓':'–'}</span>
-      </div>
-      <div class="s-row">
-        <div><div class="s-label">Time Blocks</div></div>
-        <span class="pill ${S.timeBlocksDirHandle?'pill-green':'pill-amber'}">${S.timeBlocksDirHandle?'✓':'–'}</span>
-      </div>
     </div>
 
     <div class="s-section">
@@ -5543,14 +5483,6 @@ function showSettings() {
 
     ${batterySection}
 
-    <div class="s-section">
-      <div class="s-section-title">App</div>
-      <button class="btn btn-ghost" style="width:100%" id="s-install">📲 Install Guide</button>
-    </div>
-    <div class="s-section">
-      <div class="s-section-title">Danger Zone</div>
-      <button class="btn btn-ghost" style="width:100%;color:var(--danger);border-color:rgba(255,68,102,.3)" id="s-clear">Clear All Data &amp; Reset</button>
-    </div>
     <button class="btn btn-ghost" style="width:100%" id="s-close">Close</button>
   </div>`;
   document.body.appendChild(ov);
@@ -5577,7 +5509,6 @@ function showSettings() {
     LS.set('logOutputFormat', fmtIn.value.trim() || '{{date:YYYY}}/{{date:YYYYMMDDHHmmss}}');
   });
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
-  ov.querySelector('#s-install').addEventListener('click',()=>{ close(); showInstallGuide(); });
   // Battery optimization buttons
   ov.querySelector('#s-battery-open')?.addEventListener('click',()=>{
     // Deep-link into Android settings — works on most Android versions
@@ -5587,14 +5518,6 @@ function showSettings() {
     showToast('Settings opened — tap Battery → Unrestricted');
   });
   ov.querySelector('#s-battery-dismiss')?.addEventListener('click',()=>{ LS.set('batteryTipDismissed', true); close(); showSettings(); });
-  ov.querySelector('#s-battery-reset')?.addEventListener('click',()=>{ LS.del('batteryTipDismissed'); close(); showSettings(); });
-  ov.querySelector('#s-clear').addEventListener('click',()=>{
-    if (confirm('Clear all app data and reset?')) {
-      IDB.del('vaultHandle').catch(()=>{});
-      localStorage.clear();
-      location.reload();
-    }
-  });
   // Theme segment
   ov.querySelectorAll('.theme-seg-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5603,18 +5526,6 @@ function showSettings() {
       applyTheme(btn.dataset.theme);
     });
   });
-  // ── Focus timer range settings ──
-  const pomoFocusMaxIn = ov.querySelector('#s-pomo-focus-max');
-  const pomoBreakMaxIn = ov.querySelector('#s-pomo-break-max');
-  function savePomoDurations() {
-    const prev = pomoGetSettings();
-    const fm = Math.max(1, Math.min(120, parseInt(pomoFocusMaxIn.value) || 60));
-    const bm = Math.max(1, Math.min(60,  parseInt(pomoBreakMaxIn.value) || 15));
-    LS.set('pomoSettings', { ...prev, focusMaxMins: fm, breakMaxMins: bm });
-  }
-  pomoFocusMaxIn?.addEventListener('change', savePomoDurations);
-  pomoBreakMaxIn?.addEventListener('change', savePomoDurations);
-
   // Vault backup list
   ov.querySelector('#s-list-backups')?.addEventListener('click', async () => {
     close();
@@ -5997,7 +5908,7 @@ function showTodaySchedulePopup() {
     return row;
   }
 
-  if (!timelineItems.length && !focusedItems.length) {
+  if (!timelineItems.length) {
     body.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--muted);font-size:13px;font-family:var(--font-mono);line-height:1.8;opacity:.7">No activities scheduled today.<br>Add items in your vault folder.</div>`;
   } else {
     // Timeline section
@@ -6007,15 +5918,6 @@ function showTodaySchedulePopup() {
       tLabel.textContent = '📅 Timeline';
       body.appendChild(tLabel);
       timelineItems.forEach((item, i) => body.appendChild(renderItem(item, i, false)));
-    }
-
-    // Focused Work section
-    if (focusedItems.length) {
-      const fLabel = document.createElement('div');
-      fLabel.className = 'tsched-section-label';
-      fLabel.textContent = '🌀 Focused Work';
-      body.appendChild(fLabel);
-      focusedItems.forEach(item => body.appendChild(renderItem(item, -1, true)));
     }
   }
 
@@ -6073,7 +5975,6 @@ function buildSkeleton() {
   // ── Log text button ──
   document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
   document.getElementById('log-audio-btn')?.addEventListener('click', () => showLogsPopup());
-  document.getElementById('pomo-btn-header')?.addEventListener('click', showPomoPopup);
   document.getElementById('habit-edit-btn')?.addEventListener('click', ()=>{
     S._habitEditMode = !S._habitEditMode;
     renderHabitBars();
