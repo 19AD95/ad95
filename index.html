@@ -5913,10 +5913,6 @@ function showTodaySchedulePopup() {
   } else {
     // Timeline section
     if (timelineItems.length) {
-      const tLabel = document.createElement('div');
-      tLabel.className = 'tsched-section-label';
-      tLabel.textContent = '📅 Timeline';
-      body.appendChild(tLabel);
       timelineItems.forEach((item, i) => body.appendChild(renderItem(item, i, false)));
     }
   }
