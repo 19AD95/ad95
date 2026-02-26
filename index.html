@@ -5669,8 +5669,27 @@ function showSettings() {
             reg2.waiting.postMessage({ type: 'SKIP_WAITING' });
           });
         } else {
-          verLabel.textContent = 'update available — reopen app to install';
+          // SW didn't change (only index.html updated), so no waiting SW exists.
+          // A hard reload after clearing the cached index.html is all that's needed.
+          verLabel.textContent = 'update ready';
           pill.style.display = 'inline-flex';
+          bar.style.display  = 'flex';
+          msg.textContent = 'New version available. Tap below to reload and apply it now.';
+          doUpdate.addEventListener('click', async () => {
+            doUpdate.textContent = 'Updating…';
+            // Update stored SHA so after reload we don't re-trigger this flow
+            LS.set('appFileSha', remoteSha);
+            // Delete cached index.html from all caches so the fresh copy is fetched from network
+            try {
+              const cacheNames = await caches.keys();
+              await Promise.all(cacheNames.map(async name => {
+                const c = await caches.open(name);
+                await c.delete('./index.html');
+                await c.delete(location.href);
+              }));
+            } catch {}
+            location.reload(true);
+          });
         }
       } else {
         verLabel.textContent = 'up to date';
