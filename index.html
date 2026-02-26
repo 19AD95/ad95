@@ -908,6 +908,11 @@ async function loadScheduleFromTimeBlocksDir(dir) {
 }
 
 async function loadHabitDataFromFile() {
+  // localStorage is always written first on every habit update — treat it as
+  // the authoritative source for today.  Vault file may lag behind (async write)
+  // so we merge: for each key take whichever value is higher.
+  const lsData = LS.get('habitData_' + todayStr()) || {};
+
   if (S.vaultDirHandle) {
     try {
       const dataDir = await getHabitDataDir();
@@ -916,42 +921,56 @@ async function loadHabitDataFromFile() {
         const text = (await (await fh.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         const m = text.match(/^---\n([\s\S]+?)\n---/);
         if (m) {
-          S.habitData = {};
+          const vaultData = {};
           m[1].split('\n').forEach(line => {
             const lm = line.match(/^(\w+):\s*(.+)/);
-            if (lm) S.habitData[lm[1]] = parseInt(lm[2]) || 0;
+            if (lm) vaultData[lm[1]] = parseInt(lm[2]) || 0;
           });
+          // Merge: take the higher value so a just-logged habit never reverts
+          const merged = { ...vaultData };
+          for (const k of Object.keys(lsData)) {
+            merged[k] = Math.max(vaultData[k] ?? 0, lsData[k] ?? 0);
+          }
+          S.habitData = merged;
           return;
         }
       }
     } catch { /* file doesn't exist yet — created on first write */ }
   }
-  S.habitData = LS.get('habitData_' + todayStr()) || {};
+  S.habitData = lsData;
 }
 
+let _habitWritePending = false;
+let _habitWriteQueued = false;
+
 async function writeHabitData() {
-  // Always save to localStorage immediately as backup
+  // Always save to localStorage immediately — this is instant and never fails
   LS.set('habitData_' + todayStr(), S.habitData);
+
+  // Debounce vault writes: if one is already in flight, just flag to re-run after
+  if (_habitWritePending) { _habitWriteQueued = true; return; }
   if (!S.vaultDirHandle || !S.config) return;
+
+  _habitWritePending = true;
   try {
     const dataDir = await getHabitDataDir();
-    if (!dataDir) return;
-    const fn = todayFilename();
-    let existingBody = '';
-    try {
-      const ef = await dataDir.getFileHandle(fn, { create:false });
-      const txt = (await (await ef.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const bm = txt.match(/^---\n[\s\S]+?\n---\n?([\s\S]*)/);
-      if (bm) existingBody = bm[1].trimStart();
-    } catch {}
-    const keys = Object.keys(S.config.habitDefinitions || {});
-    const yaml = keys.map(k=>`${k}: ${S.habitData[k]??0}`).join('\n');
-    const fh = await dataDir.getFileHandle(fn, { create:true });
-    const w = await fh.createWritable();
-    await w.write(`---\n${yaml}\n---\n${existingBody ? '\n'+existingBody : ''}`);
-    await w.close();
+    if (dataDir) {
+      const fn = todayFilename();
+      const keys = Object.keys(S.config.habitDefinitions || {});
+      // Snapshot habitData at write time (may have changed while awaiting)
+      const snapshot = { ...S.habitData };
+      const yaml = keys.map(k => `${k}: ${snapshot[k] ?? 0}`).join('\n');
+      const fh = await dataDir.getFileHandle(fn, { create: true });
+      await _writeFileHandle(fh, `---\n${yaml}\n---\n`);
+    }
   } catch(e) {
-    console.warn('Vault write silently failed (localStorage used):', e.message);
+    console.warn('Vault habit write failed (localStorage used):', e.message);
+  } finally {
+    _habitWritePending = false;
+    if (_habitWriteQueued) {
+      _habitWriteQueued = false;
+      writeHabitData(); // flush the queued update
+    }
   }
 }
 
@@ -2241,7 +2260,16 @@ function renderHabitBars() {
 
       const iconEl = col.querySelector('.habit-icon');
       iconEl.addEventListener('click', () => {
-        showManualModal(key);
+        if (isBoolHabit) {
+          // Instant toggle — no modal, immediate visual feedback
+          const newVal = (S.habitData[key] || 0) >= 1 ? 0 : 1;
+          S.habitData[key] = newVal;
+          writeHabitData();
+          renderHabitBars();
+          showToast(newVal >= 1 ? (cfg.messages?.[1] || '✓ Done!') : 'Cleared');
+        } else {
+          showManualModal(key);
+        }
       });
 
       // Double-tap → jump to schedule
