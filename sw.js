@@ -1,4 +1,4 @@
-const CACHE_NAME = 'habit-tracker-v17';
+const CACHE_NAME = 'habit-tracker-v19';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
 
 const STATUS_TAG = 'alarm-watcher'; // persistent status notification tag
@@ -170,15 +170,15 @@ async function updateStatusNotification() {
 
   try {
     await self.registration.showNotification('⏰ Vault Dex · Alarms Active', {
-      body:    bodyLines,
-      tag:     STATUS_TAG,
-      icon:    './icon.svg',
-      badge:   './icon.svg',
-      silent:  true,          // no sound — purely informational
-      renotify: true,          // replace the existing one silently
-      requireInteraction: false, // can be auto-dismissed by OS if needed
-      data:    { type: 'status' },
-      actions: [{ action: 'open', title: 'Open App' }],
+      body:               bodyLines,
+      tag:                STATUS_TAG,
+      icon:               './icon.svg',
+      badge:              './icon.svg',
+      silent:             true,  // no sound — purely informational
+      renotify:           true,  // replace existing silently
+      requireInteraction: true,  // prevents swipe-to-dismiss on Chrome/Android
+      data:               { type: 'status' },
+      actions:            [{ action: 'open', title: 'Open App' }],
     });
   } catch (err) {
     console.warn('[SW] status notification failed:', err);
@@ -486,10 +486,14 @@ self.addEventListener('notificationclick', e => {
 
 // ── NOTIFICATION CLOSE ────────────────────────────────────────────────────────
 self.addEventListener('notificationclose', e => {
-  // If the user manually swipes away the status notification, respect it
-  // for this session but don't permanently disable it
   if (e.notification.tag === STATUS_TAG) {
-    // Re-show it on the next alarm check — the user just cleared the tray
-    // We don't permanently disable because that would break the "always visible" goal
+    // requireInteraction: true should block swipe-dismiss, but if the OS
+    // dismisses it anyway (e.g. "Clear all"), immediately repost it —
+    // unless the user has explicitly disabled it in Settings.
+    e.waitUntil((async () => {
+      const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => undefined);
+      if (pref === false) return;
+      await updateStatusNotification();
+    })());
   }
 });

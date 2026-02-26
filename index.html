@@ -5458,39 +5458,57 @@ function showSettings() {
       </div>
     </div>` : '';
 
+  // Build alarm status section for settings
   const trayEnabled = LS.get('statusNotifEnabled') !== false;
-  const trayRow = np === 'granted' ? `
-    <div class="s-row" id="s-tray-row">
-      <div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status shown in notification shade</div></div>
+  const _futureAlarms = (() => {
+    try {
+      const sched = getTodaySchedule();
+      const now = new Date();
+      return sched.filter(item => { try { return schedDate(item.time) > now; } catch { return false; } });
+    } catch { return []; }
+  })();
+  const _hasSW = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
+  let _aState, _aLabel, _aSub;
+  if (np !== 'granted') {
+    _aState = 'noperm'; _aLabel = 'Notifications blocked';
+    _aSub = notifBlocked
+      ? (hostedRemotely ? 'Blocked by hosting provider — see Install Guide' : 'Chrome → 🔒 lock → Site settings → Notifications → Allow')
+      : 'Tap Enable below to arm background alarms';
+  } else if (!_hasSW) {
+    _aState = 'inactive'; _aLabel = 'Alarm watcher starting…'; _aSub = 'Reload if this persists';
+  } else if (!S.config?.schedule?.length) {
+    _aState = 'inactive'; _aLabel = 'No schedule loaded'; _aSub = 'Connect your vault to arm background alarms';
+  } else if (_futureAlarms.length === 0) {
+    _aState = 'inactive'; _aLabel = 'All alarms done for today'; _aSub = 'No upcoming alarms — check back tomorrow';
+  } else {
+    _aState = 'active'; _aLabel = 'Alarms armed';
+    _aSub = \`Next: \${_futureAlarms[0].activity} at \${_futureAlarms[0].time}\`;
+  }
+  const _dotColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
+  const _textColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
+
+  const notifSection = `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0 6px">
+      <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${_dotColor};${_aState==='active'?'box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite':''}"></div>
+      <div style="flex:1;font-size:12px;font-family:var(--font-mono);color:${_textColor};line-height:1.5">
+        ${_aLabel}
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${_aSub}</div>
+      </div>
+    </div>
+    ${np === 'default' ? '<button class="btn btn-green" style="width:100%;margin-top:4px" id="s-notif">Enable Notifications</button>' : ''}
+    ${np !== 'granted' && notifBlocked ? `<div class="notif-fix" style="margin-top:8px">${hostedRemotely
+      ? '<b>Blocked by your hosting provider.</b><br>Host locally or add <code>Permissions-Policy: notifications=(self)</code> to your <code>_headers</code> file.'
+      : 'To unblock: <b>Chrome → 🔒 lock → Site settings → Notifications → Allow</b> then reload.'
+    }</div>` : ''}
+    ${np === 'granted' ? `
+    <div class="s-row" id="s-tray-row" style="margin-top:4px">
+      <div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status in notification shade</div></div>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="pill ${trayEnabled ? 'pill-green' : 'pill-amber'}" id="s-tray-pill">${trayEnabled ? 'ON ✓' : 'OFF'}</span>
         <div class="asb-toggle-sw ${trayEnabled ? 'on' : 'off'}" id="s-tray-sw" style="cursor:pointer"></div>
       </div>
-    </div>` : '';
-
-  const notifSection = notifBlocked ? `
-    <div class="s-row">
-      <div><div class="s-label">Push Alerts</div><div class="s-sub">Background alarm notifications</div></div>
-      <span class="pill pill-red">BLOCKED</span>
-    </div>
-    <div class="notif-fix">
-      ${hostedRemotely
-        ? `<b>Blocked by your hosting provider.</b><br>Netlify and similar hosts disable notifications via HTTP headers. To fix:<br><br>
-           1. Host the app locally instead (see Install Guide)<br>
-           2. Or add <code>Permissions-Policy: notifications=(self)</code> to your Netlify <code>_headers</code> file`
-        : `Notifications were blocked.<br><br>To unblock: <b>Chrome → 🔒 lock icon → Site settings → Notifications → Allow</b><br>Then reload.`
-      }
-    </div>` : np === 'default' ? `
-    <div class="s-row">
-      <div><div class="s-label">Push Alerts</div><div class="s-sub">Background alarm notifications</div></div>
-      <span class="pill pill-amber">OFF</span>
-    </div>
-    <button class="btn btn-green" style="width:100%;margin-top:8px" id="s-notif">Enable Notifications</button>` : `
-    <div class="s-row">
-      <div><div class="s-label">Push Alerts</div><div class="s-sub">Background alarm notifications</div></div>
-      <span class="pill pill-green">ON ✓</span>
-    </div>
-    ${trayRow}`;
+    </div>` : ''}
+  `;
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
   const backupSection = '';
@@ -5774,62 +5792,8 @@ function showFirstRunSetup() {
 // Shows a persistent in-app strip under the header indicating whether
 // background alarms are armed. Also controls the OS tray status notification.
 function renderAlarmStatusBanner() {
-  const area = document.getElementById('reconnect-area');
-  if (!area) return;
-
-  // Don't overwrite the vault reconnect banner — it's higher priority
-  if (area.querySelector('.reconnect-banner')) return;
-
-  // Remove any existing alarm status banner before re-rendering
-  area.querySelector('.alarm-status-banner')?.remove();
-
-  const perm = S.notifPermission;
-  const hasSW = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
-  const schedule = getTodaySchedule();
-  const now = new Date();
-
-  // Count future alarms for today
-  const futureAlarms = schedule.filter(item => {
-    try { return schedDate(item.time) > now; } catch { return false; }
-  });
-
-  const banner = document.createElement('div');
-  banner.className = 'alarm-status-banner';
-
-  let state, label, sublabel;
-
-  if (perm !== 'granted') {
-    state = 'noperm';
-    label = 'Notifications blocked';
-    sublabel = 'Tap ⚙ Settings → Enable Notifications to arm alarms';
-  } else if (!hasSW) {
-    state = 'inactive';
-    label = 'Alarm watcher starting…';
-    sublabel = 'Service worker initialising — reload if this persists';
-  } else if (!S.config?.schedule?.length) {
-    state = 'inactive';
-    label = 'No schedule loaded';
-    sublabel = 'Connect your vault to arm background alarms';
-  } else if (futureAlarms.length === 0) {
-    state = 'inactive';
-    label = 'All alarms done for today';
-    sublabel = 'No upcoming alarms remaining — check back tomorrow';
-  } else {
-    state = 'active';
-    const nextItem = futureAlarms[0];
-    label = 'Alarms armed';
-    sublabel = `Next: ${nextItem.activity} at ${nextItem.time}`;
-  }
-
-  banner.classList.add(state);
-  banner.innerHTML = `
-    <div class="asb-dot ${state}"></div>
-    <div class="asb-text ${state}">
-      ${label}
-      <div class="asb-sub">${sublabel}</div>
-    </div>`;
-
-  area.appendChild(banner);
+  // Banner removed from main menu — alarm status lives in Settings only
+  document.querySelector('.alarm-status-banner')?.remove();
 }
 
 // ── RECONNECT BANNER ───────────────────────────────────────────────────────
@@ -6081,7 +6045,6 @@ function buildSkeleton() {
 function renderAll() {
   renderCountdown();
   renderHabitBars();
-  renderAlarmStatusBanner();
   // Keep SW alarm store in sync
   syncAlarmsToSW();
 }
@@ -6310,7 +6273,6 @@ async function boot() {
     setTimeout(()=>Notification.requestPermission().then(p=>{
       S.notifPermission=p;
       showBatteryBanner();
-      renderAlarmStatusBanner();
       // Send tray-notif preference to SW now that permission is known
       if (p === 'granted' && navigator.serviceWorker?.controller) {
         const trayEnabled = LS.get('statusNotifEnabled') !== false;
