@@ -105,7 +105,9 @@
   .sched-item.current{background:rgba(0,255,136,.07)}
   .sched-item.past{opacity:.4}
   .sched-item.current::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:60%;background:var(--accent);border-radius:2px}
-  .sched-time{font-size:11px;font-family:var(--font-mono);color:var(--muted);min-width:52px}
+  .sched-time{font-size:11px;font-family:var(--font-mono);color:#4a9eff;min-width:52px}
+  .sched-item.current .sched-time{color:var(--accent)}
+  .sched-item.past .sched-time{color:var(--muted)}
   .sched-act{font-size:14px;flex:1;line-height:1.3}
   .sched-preview{padding:10px 16px 12px;font-size:13px;font-family:var(--font-mono);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
 
@@ -382,7 +384,9 @@
   .tb-list-item.now-item{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.07)}
   .tb-list-item.past-item{opacity:.38}
   .tb-list-item:active{background:var(--bg3)}
-  .tb-item-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
+  .tb-item-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:#4a9eff;min-width:60px;flex-shrink:0}
+  .tb-list-item.now-item .tb-item-time{color:var(--accent)}
+  .tb-list-item.past-item .tb-item-time{color:var(--muted)}
   .tb-item-act{font-size:15px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
   .tb-item-badge{font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
   .tb-action-btn{width:28px;height:28px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-size:13px;transition:all .12s;border:1px solid var(--border);background:var(--bg3);color:var(--muted)}
@@ -2786,11 +2790,9 @@ function renderTBList(container, items, emptyMsg, emptyIcon) {
     let nowClass = '';
     if (item.time) {
       const itemTime = schedDate(item.time);
-      const { cur } = getCurNext();
-      const todayItems = getTodaySchedule().sort((a,b) => schedDate(a.time)-schedDate(b.time));
-      const myTodayIdx = todayItems.findIndex(x => x._id ? x._id === item._id : x === item);
-      if (myTodayIdx === cur) nowClass = 'now-item';
-      else if (itemTime < nowTime) nowClass = 'past-item';
+      const itemEnd  = new Date(itemTime.getTime() + (item.duration || 30) * 60000);
+      if (nowTime >= itemTime && nowTime < itemEnd) nowClass = 'now-item';
+      else if (nowTime >= itemEnd) nowClass = 'past-item';
     }
 
     const timeDisplay = item.blockType === 'open'
