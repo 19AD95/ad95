@@ -5482,7 +5482,7 @@ function showSettings() {
     _aState = 'inactive'; _aLabel = 'All alarms done for today'; _aSub = 'No upcoming alarms — check back tomorrow';
   } else {
     _aState = 'active'; _aLabel = 'Alarms armed';
-    _aSub = \`Next: \${_futureAlarms[0].activity} at \${_futureAlarms[0].time}\`;
+    _aSub = `Next: ${_futureAlarms[0].activity} at ${_futureAlarms[0].time}`;
   }
   const _dotColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
   const _textColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
