@@ -5427,13 +5427,6 @@ function showSettings() {
         <button class="btn btn-ghost" id="s-battery-dismiss" style="flex:1;font-size:13px">✓ Done / Dismiss</button>
         <button class="btn btn-green" id="s-battery-open" style="flex:2;font-size:13px">Open Android Settings</button>
       </div>
-    </div>` : (android && np === 'granted' && batteryDismissed) ? `
-    <div class="s-section">
-      <div class="s-section-title">⚡ Battery Optimization</div>
-      <div class="s-row">
-        <div><div class="s-label">Background Alarms</div><div class="s-sub">Chrome → Battery → Unrestricted</div></div>
-        <span class="pill pill-green">SET ✓</span>
-      </div>
     </div>` : '';
 
   const _notifsEnabled = LS.get('notifsEnabled') !== false;
