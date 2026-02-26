@@ -5458,6 +5458,16 @@ function showSettings() {
       </div>
     </div>` : '';
 
+  const trayEnabled = LS.get('statusNotifEnabled') !== false;
+  const trayRow = np === 'granted' ? `
+    <div class="s-row" id="s-tray-row">
+      <div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status shown in notification shade</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="pill ${trayEnabled ? 'pill-green' : 'pill-amber'}" id="s-tray-pill">${trayEnabled ? 'ON ✓' : 'OFF'}</span>
+        <div class="asb-toggle-sw ${trayEnabled ? 'on' : 'off'}" id="s-tray-sw" style="cursor:pointer"></div>
+      </div>
+    </div>` : '';
+
   const notifSection = notifBlocked ? `
     <div class="s-row">
       <div><div class="s-label">Push Alerts</div><div class="s-sub">Background alarm notifications</div></div>
@@ -5479,7 +5489,8 @@ function showSettings() {
     <div class="s-row">
       <div><div class="s-label">Push Alerts</div><div class="s-sub">Background alarm notifications</div></div>
       <span class="pill pill-green">ON ✓</span>
-    </div>`;
+    </div>
+    ${trayRow}`;
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
   const backupSection = '';
@@ -5526,6 +5537,22 @@ function showSettings() {
 
 
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
+  // Tray notification toggle
+  ov.querySelector('#s-tray-sw')?.addEventListener('click', () => {
+    const nowEnabled = LS.get('statusNotifEnabled') !== false;
+    const next = !nowEnabled;
+    LS.set('statusNotifEnabled', next);
+    // Update pill + switch visually
+    const sw   = ov.querySelector('#s-tray-sw');
+    const pill = ov.querySelector('#s-tray-pill');
+    if (sw)   { sw.classList.toggle('on', next); sw.classList.toggle('off', !next); }
+    if (pill) { pill.textContent = next ? 'ON ✓' : 'OFF'; pill.className = 'pill ' + (next ? 'pill-green' : 'pill-amber'); }
+    // Tell SW
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: next });
+    }
+    showToast(next ? '🔔 Tray notification enabled' : '🔕 Tray notification disabled');
+  });
   // Battery optimization buttons
   ov.querySelector('#s-battery-open')?.addEventListener('click',()=>{
     // Deep-link into Android settings — works on most Android versions
@@ -5766,9 +5793,6 @@ function renderAlarmStatusBanner() {
     try { return schedDate(item.time) > now; } catch { return false; }
   });
 
-  // Read stored toggle preference (default: on)
-  const trayEnabled = LS.get('statusNotifEnabled') !== false;
-
   const banner = document.createElement('div');
   banner.className = 'alarm-status-banner';
 
@@ -5793,9 +5817,8 @@ function renderAlarmStatusBanner() {
   } else {
     state = 'active';
     const nextItem = futureAlarms[0];
-    const nextTime = nextItem.time;
-    label = `Alarms armed · ${futureAlarms.length} remaining today`;
-    sublabel = `Next: ${nextItem.activity} at ${nextTime}`;
+    label = 'Alarms armed';
+    sublabel = `Next: ${nextItem.activity} at ${nextItem.time}`;
   }
 
   banner.classList.add(state);
@@ -5804,32 +5827,9 @@ function renderAlarmStatusBanner() {
     <div class="asb-text ${state}">
       ${label}
       <div class="asb-sub">${sublabel}</div>
-    </div>
-    ${perm === 'granted' ? `
-    <div class="asb-toggle" id="asb-toggle" title="Toggle tray notification">
-      <span class="asb-toggle-label">Tray</span>
-      <div class="asb-toggle-sw ${trayEnabled ? 'on' : 'off'}" id="asb-sw"></div>
-    </div>` : ''}`;
+    </div>`;
 
   area.appendChild(banner);
-
-  // Wire toggle
-  const toggle = banner.querySelector('#asb-toggle');
-  if (toggle) {
-    toggle.addEventListener('click', () => {
-      const nowEnabled = LS.get('statusNotifEnabled') !== false;
-      const next = !nowEnabled;
-      LS.set('statusNotifEnabled', next);
-      const sw = toggle.querySelector('#asb-sw');
-      sw.classList.toggle('on', next);
-      sw.classList.toggle('off', !next);
-      // Tell SW to show/hide tray notification
-      if (navigator.serviceWorker?.controller) {
-        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: next });
-      }
-      showToast(next ? '🔔 Tray notification enabled' : '🔕 Tray notification disabled');
-    });
-  }
 }
 
 // ── RECONNECT BANNER ───────────────────────────────────────────────────────
