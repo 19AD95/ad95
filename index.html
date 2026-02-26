@@ -5427,7 +5427,7 @@ function _openLogEditor(log) {
 }
 
 
-function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 22) ? 'light' : 'dark'; }
+function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 21) ? 'light' : 'dark'; }
 function applyTheme(t) {
   LS.set('theme', t);
   const resolved = t === 'auto' ? autoThemeForTime() : t;
@@ -5656,16 +5656,29 @@ function showSettings() {
         msg.textContent = 'New version available. Tap below to reload and apply it now.';
         doUpdate.addEventListener('click', async () => {
           doUpdate.textContent = 'Updating…';
-          // Save new SHA before reload so on next open it shows up to date
-          LS.set('appFileSha', remoteSha);
+          doUpdate.disabled = true;
           try {
-            // Nuke all caches and unregister SW so reload fetches fresh from network
+            // 1. Save new SHA so next check shows "up to date"
+            LS.set('appFileSha', remoteSha);
+            // 2. Nuke all existing caches
             const cacheNames = await caches.keys();
             await Promise.all(cacheNames.map(n => caches.delete(n)));
-            const swRegOld = await navigator.serviceWorker.getRegistration();
+            // 3. Write the already-fetched new HTML into a fresh cache entry so the
+            //    re-registered SW serves it immediately on reload, not a stale copy
+            const freshCache = await caches.open('habit-tracker-v22');
+            await freshCache.put('./index.html', new Response(remoteHTML, {
+              headers: { 'Content-Type': 'text/html; charset=utf-8' }
+            }));
+            // 4. Unregister SW so it re-registers cleanly on next load
+            const swRegOld = await navigator.serviceWorker?.getRegistration();
             if (swRegOld) await swRegOld.unregister();
-          } catch {}
-          location.reload(true);
+            // 5. Reload — SW re-registers, finds new index.html already in cache
+            location.reload(true);
+          } catch(err) {
+            doUpdate.textContent = 'Failed — try again';
+            doUpdate.disabled = false;
+            console.error('[update]', err);
+          }
         });
       }
     } catch(e) {
