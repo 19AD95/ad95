@@ -136,30 +136,6 @@
   .reconnect-btn:active{transform:scale(.95)}
 
   /* alarm status banner */
-  .alarm-status-banner{margin:10px 20px 0;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;animation:fadeUp .3s ease;transition:background .3s,border-color .3s}
-  .alarm-status-banner.active{background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.25)}
-  .alarm-status-banner.inactive{background:rgba(100,100,120,.07);border:1px solid rgba(100,100,120,.2)}
-  .alarm-status-banner.noperm{background:rgba(255,170,0,.07);border:1px solid rgba(255,170,0,.2)}
-  .asb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-  .asb-dot.active{background:var(--accent);box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite}
-  .asb-dot.inactive{background:var(--muted)}
-  .asb-dot.noperm{background:var(--warn)}
-  .asb-text{flex:1;font-size:11px;font-family:var(--font-mono);line-height:1.5}
-  .asb-text.active{color:var(--accent)}
-  .asb-text.inactive{color:var(--muted)}
-  .asb-text.noperm{color:var(--warn)}
-  .asb-sub{font-size:10px;color:var(--muted);margin-top:1px}
-  .asb-toggle{display:flex;align-items:center;gap:6px;flex-shrink:0;cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);transition:all .15s}
-  .asb-toggle:active{background:var(--border)}
-  .asb-toggle-label{font-size:10px;font-family:var(--font-mono);color:var(--muted);white-space:nowrap}
-  .asb-toggle-sw{width:28px;height:16px;border-radius:8px;position:relative;transition:background .2s;flex-shrink:0}
-  .asb-toggle-sw.on{background:var(--accent)}
-  .asb-toggle-sw.off{background:var(--muted);opacity:.5}
-  .asb-toggle-sw::after{content:'';position:absolute;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .2s}
-  .asb-toggle-sw.on::after{left:14px}
-  .asb-toggle-sw.off::after{left:2px}
-  @keyframes asbPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,.4)}50%{box-shadow:0 0 0 5px rgba(0,255,136,.0)}}
-
   /* first-run setup */
   .setup-screen{position:fixed;inset:0;background:var(--bg);z-index:300;overflow-y:auto;padding:48px 24px calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;justify-content:center}
   .setup-inner{width:100%;max-width:360px;display:flex;flex-direction:column;gap:20px;align-items:center}
@@ -1253,6 +1229,7 @@ function detectHabit(activity) {
 // ── ALARM CHECK + MODAL ────────────────────────────────────────────────────
 function checkAlarms() {
   if (!S.config) return;
+  if (LS.get('notifsEnabled') === false) return;
   const now=Date.now(), sc=getTodaySchedule();
   for (const idx in S.snooze) {
     if (S.snooze[idx]<=now) {
@@ -1276,6 +1253,7 @@ function checkAlarms() {
 function syncAlarmsToSW() {
   if (!navigator.serviceWorker?.controller) return;
   if (S.notifPermission !== 'granted') return;
+  if (LS.get('notifsEnabled') === false) return;
   if (!S.config?.schedule?.length) return;
 
   const snOpts = S.config.habitTracker?.snoozeOptions || [5, 10];
@@ -5458,61 +5436,38 @@ function showSettings() {
       </div>
     </div>` : '';
 
-  // Build alarm status section for settings
-  const trayEnabled = LS.get('statusNotifEnabled') !== false;
-  const _futureAlarms = (() => {
-    try {
-      const sched = getTodaySchedule();
-      const now = new Date();
-      return sched.filter(item => { try { return schedDate(item.time) > now; } catch { return false; } });
-    } catch { return []; }
-  })();
-  const _hasSW = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
-  let _aState, _aLabel, _aSub;
-  if (np !== 'granted') {
-    _aState = 'noperm'; _aLabel = 'Notifications blocked';
-    _aSub = notifBlocked
-      ? (hostedRemotely ? 'Blocked by hosting provider — see Install Guide' : 'Chrome → 🔒 lock → Site settings → Notifications → Allow')
-      : 'Tap Enable below to arm background alarms';
-  } else if (!_hasSW) {
-    _aState = 'inactive'; _aLabel = 'Alarm watcher starting…'; _aSub = 'Reload if this persists';
-  } else if (!S.config?.schedule?.length) {
-    _aState = 'inactive'; _aLabel = 'No schedule loaded'; _aSub = 'Connect your vault to arm background alarms';
-  } else if (_futureAlarms.length === 0) {
-    _aState = 'inactive'; _aLabel = 'All alarms done for today'; _aSub = 'No upcoming alarms — check back tomorrow';
-  } else {
-    _aState = 'active'; _aLabel = 'Alarms armed';
-    _aSub = `Next: ${_futureAlarms[0].activity} at ${_futureAlarms[0].time}`;
-  }
-  const _dotColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
-  const _textColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
-
-  // Build notifSection with string concatenation — avoids nested template literal crash
+  const _notifsEnabled = LS.get('notifsEnabled') !== false;
   let notifSection = '';
-  notifSection += '<div style="display:flex;align-items:center;gap:10px;padding:10px 0 6px">';
-  notifSection += '<div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:'
-    + _dotColor + ';'
-    + (_aState === 'active' ? 'box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite' : '')
-    + '"></div>';
-  notifSection += '<div style="flex:1;font-size:12px;font-family:var(--font-mono);color:' + _textColor + ';line-height:1.5">'
-    + _aLabel
-    + '<div style="font-size:11px;color:var(--muted);margin-top:1px">' + _aSub + '</div></div>';
-  notifSection += '</div>';
-  if (np === 'default')
-    notifSection += '<button class="btn btn-green" style="width:100%;margin-top:4px" id="s-notif">Enable Notifications</button>';
-  if (np !== 'granted' && notifBlocked)
-    notifSection += '<div class="notif-fix" style="margin-top:8px">'
+  if (notifBlocked) {
+    notifSection = '<div class="s-row">'
+      + '<div><div class="s-label">Alarm Notifications</div><div class="s-sub">Background alarm notifications</div></div>'
+      + '<span class="pill pill-red">BLOCKED</span>'
+      + '</div>'
+      + '<div class="notif-fix" style="margin-top:8px">'
       + (hostedRemotely
           ? '<b>Blocked by your hosting provider.</b><br>Host locally or add <code>Permissions-Policy: notifications=(self)</code> to your <code>_headers</code> file.'
-          : 'To unblock: <b>Chrome &rarr; lock &rarr; Site settings &rarr; Notifications &rarr; Allow</b> then reload.')
+          : 'To unblock: <b>Chrome → 🔒 lock → Site settings → Notifications → Allow</b><br>Then reload.')
       + '</div>';
-  if (np === 'granted')
-    notifSection += '<div class="s-row" id="s-tray-row" style="margin-top:4px">'
-      + '<div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status in notification shade</div></div>'
-      + '<div style="display:flex;align-items:center;gap:8px">'
-      + '<span class="pill ' + (trayEnabled ? 'pill-green' : 'pill-amber') + '" id="s-tray-pill">' + (trayEnabled ? 'ON &#10003;' : 'OFF') + '</span>'
-      + '<div class="asb-toggle-sw ' + (trayEnabled ? 'on' : 'off') + '" id="s-tray-sw" style="cursor:pointer"></div>'
-      + '</div></div>';
+  } else if (np === 'default') {
+    notifSection = '<div class="s-row">'
+      + '<div><div class="s-label">Alarm Notifications</div><div class="s-sub">Background alarm notifications</div></div>'
+      + '<span class="pill pill-amber">OFF</span>'
+      + '</div>'
+      + '<button class="btn btn-green" style="width:100%;margin-top:8px" id="s-notif">Enable Notifications</button>';
+  } else {
+    // Granted — show toggle
+    const _swOn = _notifsEnabled ? 'on' : 'off';
+    const _swBg = _notifsEnabled ? 'var(--accent)' : 'rgba(120,120,140,.4)';
+    const _swDot = _notifsEnabled ? '14px' : '2px';
+    notifSection = '<div class="s-row" style="align-items:center">'
+      + '<div><div class="s-label">Alarm Notifications</div><div class="s-sub">'
+      + (_notifsEnabled ? 'Alarms will fire in the background' : 'Alarms are silenced')
+      + '</div></div>'
+      + '<div id="s-notif-toggle" style="cursor:pointer;width:44px;height:24px;border-radius:12px;background:' + _swBg + ';position:relative;transition:background .2s;flex-shrink:0">'
+      + '<div style="position:absolute;top:3px;left:' + _swDot + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>'
+      + '</div>'
+      + '</div>';
+  }
 
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
@@ -5560,21 +5515,29 @@ function showSettings() {
 
 
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
-  // Tray notification toggle
-  ov.querySelector('#s-tray-sw')?.addEventListener('click', () => {
-    const nowEnabled = LS.get('statusNotifEnabled') !== false;
-    const next = !nowEnabled;
-    LS.set('statusNotifEnabled', next);
-    // Update pill + switch visually
-    const sw   = ov.querySelector('#s-tray-sw');
-    const pill = ov.querySelector('#s-tray-pill');
-    if (sw)   { sw.classList.toggle('on', next); sw.classList.toggle('off', !next); }
-    if (pill) { pill.textContent = next ? 'ON ✓' : 'OFF'; pill.className = 'pill ' + (next ? 'pill-green' : 'pill-amber'); }
-    // Tell SW
-    if (navigator.serviceWorker?.controller) {
-      navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: next });
+  // Notifications toggle (soft on/off when permission is granted)
+  ov.querySelector('#s-notif-toggle')?.addEventListener('click', () => {
+    const nowOn = LS.get('notifsEnabled') !== false;
+    const next  = !nowOn;
+    LS.set('notifsEnabled', next);
+    // Update toggle visually
+    const tog = ov.querySelector('#s-notif-toggle');
+    const dot = tog?.querySelector('div');
+    if (tog) tog.style.background = next ? 'var(--accent)' : 'rgba(120,120,140,.4)';
+    if (dot) dot.style.left = next ? '14px' : '2px';
+    // Update sub-label
+    const sub = ov.querySelector('#s-notif-toggle')?.closest('.s-row')?.querySelector('.s-sub');
+    if (sub) sub.textContent = next ? 'Alarms will fire in the background' : 'Alarms are silenced';
+    // Sync to SW — send full schedule if turning on, empty if turning off
+    if (next) {
+      syncAlarmsToSW();
+      showToast('🔔 Alarm notifications on');
+    } else {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SYNC_ALARMS', alarms: [] });
+      }
+      showToast('🔕 Alarm notifications off');
     }
-    showToast(next ? '🔔 Tray notification enabled' : '🔕 Tray notification disabled');
   });
   // Battery optimization buttons
   ov.querySelector('#s-battery-open')?.addEventListener('click',()=>{
@@ -5796,10 +5759,7 @@ function showFirstRunSetup() {
 // ── ALARM STATUS BANNER ──────────────────────────────────────────────────────
 // Shows a persistent in-app strip under the header indicating whether
 // background alarms are armed. Also controls the OS tray status notification.
-function renderAlarmStatusBanner() {
-  // Banner removed from main menu — alarm status lives in Settings only
-  document.querySelector('.alarm-status-banner')?.remove();
-}
+
 
 // ── RECONNECT BANNER ───────────────────────────────────────────────────────
 function showReconnectBanner() {
@@ -6278,21 +6238,9 @@ async function boot() {
     setTimeout(()=>Notification.requestPermission().then(p=>{
       S.notifPermission=p;
       showBatteryBanner();
-      // Send tray-notif preference to SW now that permission is known
-      if (p === 'granted' && navigator.serviceWorker?.controller) {
-        const trayEnabled = LS.get('statusNotifEnabled') !== false;
-        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: trayEnabled });
-      }
     }), 2000);
   else {
     setTimeout(showBatteryBanner, 1000);
-    // Send tray-notif preference to SW on boot
-    setTimeout(() => {
-      if (S.notifPermission === 'granted' && navigator.serviceWorker?.controller) {
-        const trayEnabled = LS.get('statusNotifEnabled') !== false;
-        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: trayEnabled });
-      }
-    }, 1500);
   }
 }
 

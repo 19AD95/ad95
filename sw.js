@@ -1,7 +1,5 @@
-const CACHE_NAME = 'habit-tracker-v21';
+const CACHE_NAME = 'habit-tracker-v22';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
-
-const STATUS_TAG = 'alarm-watcher'; // persistent status notification tag
 
 // ── INSTALL ──────────────────────────────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -18,7 +16,6 @@ self.addEventListener('activate', e => {
     await checkDueAlarms();
     startKeepAlive();
     await tryRegisterPeriodicSync();
-    await updateStatusNotification();
   })());
 });
 
@@ -47,7 +44,6 @@ self.addEventListener('periodicsync', e => {
     e.waitUntil((async () => {
       await checkDueAlarms();
       startKeepAlive();
-      await updateStatusNotification();
     })());
   }
 });
@@ -64,7 +60,6 @@ self.addEventListener('push', e => {
   e.waitUntil((async () => {
     await checkDueAlarms();
     startKeepAlive();
-    await updateStatusNotification();
   })());
 });
 
@@ -132,66 +127,6 @@ async function dbClear(store) {
   });
 }
 
-// ── STATUS NOTIFICATION ───────────────────────────────────────────────────────
-// A persistent notification that lives in the tray showing alarm status.
-// It is silent (no sound/vibration), non-interactive except for a "View" action.
-// Updated every time alarms change. Removed when no alarms remain.
-async function updateStatusNotification() {
-  // Check user preference — if disabled, clear and return
-  const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => true);
-  if (pref === false) {
-    await clearStatusNotification();
-    return;
-  }
-
-  const alarms = await dbGetAll('alarms').catch(() => []);
-  const now = Date.now();
-  const upcoming = alarms
-    .filter(a => a.fireAt > now)
-    .sort((a, b) => a.fireAt - b.fireAt);
-
-  if (!upcoming.length) {
-    await clearStatusNotification();
-    return;
-  }
-
-  const next = upcoming[0];
-  const nextTime = new Date(next.fireAt);
-  const timeStr = nextTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const count = upcoming.length;
-
-  // Extract just the activity name from title like "⏰ 9:00 AM — Morning Run"
-  const actMatch = next.title.match(/— (.+)$/);
-  const actName = actMatch ? actMatch[1] : next.title;
-
-  const bodyLines = count === 1
-    ? `${actName} at ${timeStr}`
-    : `Next: ${actName} at ${timeStr} · ${count} alarm${count > 1 ? 's' : ''} today`;
-
-  try {
-    await self.registration.showNotification('⏰ Vault Dex · Alarms Active', {
-      body:               bodyLines,
-      tag:                STATUS_TAG,
-      icon:               './icon.svg',
-      badge:              './icon.svg',
-      silent:             true,  // no sound — purely informational
-      renotify:           true,  // replace existing silently
-      requireInteraction: true,  // prevents swipe-to-dismiss on Chrome/Android
-      data:               { type: 'status' },
-      actions:            [{ action: 'open', title: 'Open App' }],
-    });
-  } catch (err) {
-    console.warn('[SW] status notification failed:', err);
-  }
-}
-
-async function clearStatusNotification() {
-  try {
-    const notifications = await self.registration.getNotifications({ tag: STATUS_TAG });
-    notifications.forEach(n => n.close());
-  } catch {}
-}
-
 // ── CHECK DUE ALARMS ─────────────────────────────────────────────────────────
 const LATE_GRACE_MS = 10 * 60 * 1000;
 
@@ -201,9 +136,7 @@ async function checkDueAlarms() {
   try { alarms = await dbGetAll('alarms'); } catch { return; }
 
   for (const alarm of alarms) {
-    if (alarm.tag === STATUS_TAG) continue; // never treat status as a real alarm
     const age = now - alarm.fireAt;
-
     if (age >= 0 && age <= LATE_GRACE_MS) {
       try {
         await self.registration.showNotification(alarm.title, {
@@ -222,7 +155,6 @@ async function checkDueAlarms() {
         console.warn('[SW] showNotification failed:', err);
       }
       try { await dbDelete('alarms', alarm.tag); } catch {}
-
     } else if (age > LATE_GRACE_MS) {
       try { await dbDelete('alarms', alarm.tag); } catch {}
     }
@@ -238,7 +170,7 @@ async function _updateNextWakeMeta() {
   const alarms = await dbGetAll('alarms').catch(() => []);
   const now = Date.now();
   const next = alarms
-    .filter(a => a.fireAt > now && a.tag !== STATUS_TAG)
+    .filter(a => a.fireAt > now)
     .sort((a, b) => a.fireAt - b.fireAt)[0];
 
   if (next) {
@@ -254,7 +186,6 @@ function _armNextWakeTimer(delay) {
   _nextWakeTimer = setTimeout(async () => {
     _nextWakeTimer = null;
     await checkDueAlarms();
-    await updateStatusNotification();
     startKeepAlive();
   }, Math.max(0, delay));
 }
@@ -265,12 +196,8 @@ async function rearmOnWakeup() {
     const nextWake = await dbGet('meta', 'nextWake');
     if (nextWake) {
       const delay = nextWake - Date.now();
-      if (delay <= 0) {
-        await checkDueAlarms();
-        await updateStatusNotification();
-      } else {
-        _armNextWakeTimer(delay);
-      }
+      if (delay <= 0) await checkDueAlarms();
+      else _armNextWakeTimer(delay);
     }
   } catch {}
 }
@@ -300,19 +227,9 @@ function _scheduleTick() {
     await checkDueAlarms();
 
     const remaining = await dbGetAll('alarms').catch(() => []);
-    const hasReal = remaining.some(a => a.tag !== STATUS_TAG);
-    if (!hasReal) {
+    if (!remaining.length) {
       stopKeepAlive();
-      await clearStatusNotification();
       return;
-    }
-
-    // If the status notification was swiped away while the SW was busy/dead,
-    // repost it here — this is the 20s safety net
-    const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => undefined);
-    if (pref !== false) {
-      const existing = await self.registration.getNotifications({ tag: STATUS_TAG }).catch(() => []);
-      if (!existing.length) await updateStatusNotification();
     }
 
     try { await fetch('./manifest.json', { cache: 'no-store' }); } catch {}
@@ -331,7 +248,8 @@ function setSnoozeTimer(tag, delay, title, body, actions) {
     await self.registration.showNotification(title, {
       body, tag,
       icon: './icon.svg', badge: './icon.svg',
-      vibrate: [200, 100, 200], requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200], requireInteraction: true,
+      silent: false,
       data: { tag },
       actions: actions || [
         { action: 'done',     title: '✓ Done'  },
@@ -339,7 +257,6 @@ function setSnoozeTimer(tag, delay, title, body, actions) {
         { action: 'snooze10', title: '⏰ +10m' }
       ]
     });
-    await updateStatusNotification();
   }, delay);
 }
 
@@ -357,30 +274,27 @@ self.addEventListener('message', e => {
       await dbClear('alarms');
       const now = Date.now();
       for (const alarm of (e.data.alarms || [])) {
-        if (alarm.fireAt > now) {
-          await dbPut('alarms', alarm);
-        }
+        if (alarm.fireAt > now) await dbPut('alarms', alarm);
       }
       startKeepAlive();
       await _updateNextWakeMeta();
       await tryRegisterPeriodicSync();
-      await updateStatusNotification();
     })());
     return;
   }
 
   if (e.data.type === 'SHOW_ALARM') {
     const { title, body, tag, actions, data } = e.data;
-    e.waitUntil((async () => {
-      await self.registration.showNotification(title, {
+    e.waitUntil(
+      self.registration.showNotification(title, {
         body, tag,
         icon: './icon.svg', badge: './icon.svg',
-        vibrate: [200, 100, 200], requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200], requireInteraction: true,
+        silent: false,
         data: data || {},
         actions: actions || [{ action: 'dismiss', title: 'Dismiss' }]
-      });
-      await updateStatusNotification();
-    })());
+      })
+    );
     return;
   }
 
@@ -392,7 +306,6 @@ self.addEventListener('message', e => {
       await dbPut('alarms', { tag, title, body, fireAt, actions, data: data || {} });
       startKeepAlive();
       await _updateNextWakeMeta();
-      await updateStatusNotification();
     })());
     return;
   }
@@ -400,10 +313,7 @@ self.addEventListener('message', e => {
   if (e.data.type === 'CANCEL_ALARM') {
     const { tag } = e.data;
     if (snoozeTimers[tag]) { clearTimeout(snoozeTimers[tag]); delete snoozeTimers[tag]; }
-    e.waitUntil((async () => {
-      await dbDelete('alarms', tag);
-      await updateStatusNotification();
-    })());
+    e.waitUntil(dbDelete('alarms', tag));
     return;
   }
 
@@ -412,18 +322,6 @@ self.addEventListener('message', e => {
     e.waitUntil((async () => {
       await rearmOnWakeup();
       await tryRegisterPeriodicSync();
-      await updateStatusNotification();
-    })());
-    return;
-  }
-
-  // Toggle the persistent status notification on/off
-  if (e.data.type === 'SET_STATUS_NOTIF') {
-    const enabled = e.data.enabled !== false;
-    e.waitUntil((async () => {
-      await dbPut('meta', enabled, 'statusNotifEnabled');
-      if (enabled) await updateStatusNotification();
-      else await clearStatusNotification();
     })());
     return;
   }
@@ -434,29 +332,17 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   const action = e.action;
   const tag    = e.notification.tag || '';
-  const data   = e.notification.data || {};
 
   e.waitUntil((async () => {
-    // Status notification tapped / "Open App" action
-    if (tag === STATUS_TAG || data.type === 'status' || action === 'open') {
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      if (clients.length) clients[0].focus();
-      else await self.clients.openWindow('./index.html');
-      return;
-    }
-
-    // Snooze: "snooze:idx:mins"
     if (action.startsWith('snooze:')) {
       const parts = action.split(':');
       const mins  = parseInt(parts[2]) || 5;
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const msg = { type: 'SNOOZED', tag, mins };
-      if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
+      if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'SNOOZED', tag, mins }); }
       else await self.clients.openWindow('./index.html');
       return;
     }
 
-    // Legacy snooze
     if (action === 'snooze5' || action === 'snooze10') {
       const mins = action === 'snooze5' ? 5 : 10;
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -465,19 +351,16 @@ self.addEventListener('notificationclick', e => {
       return;
     }
 
-    // Habit action: "habit:key:value"
     if (action.startsWith('habit:')) {
       const parts    = action.split(':');
       const habitKey = parts[1];
       const habitVal = parseInt(parts[2]);
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const msg = { type: 'HABIT_ACTION', habitKey, habitVal };
-      if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
+      if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'HABIT_ACTION', habitKey, habitVal }); }
       else await self.clients.openWindow('./index.html?ha=' + encodeURIComponent(JSON.stringify({ habitKey, habitVal })));
       return;
     }
 
-    // Done
     if (action === 'done') {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'NOTIFICATION_CLICK', tag }); }
@@ -485,23 +368,8 @@ self.addEventListener('notificationclick', e => {
       return;
     }
 
-    // Default tap
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (clients.length) clients[0].focus();
     else await self.clients.openWindow('./index.html');
-  })());
-});
-
-// ── NOTIFICATION CLOSE ────────────────────────────────────────────────────────
-// On Android Chrome, requireInteraction:true does NOT block swipe-dismiss for
-// web notifications. So we repost immediately every time it is closed.
-// The keep-alive tick also checks every 20s and reposts if it finds it missing.
-self.addEventListener('notificationclose', e => {
-  if (e.notification.tag !== STATUS_TAG) return;
-  e.waitUntil((async () => {
-    const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => undefined);
-    if (pref === false) return; // user disabled — leave it gone
-    // Repost immediately — no delay, no retry loop
-    await updateStatusNotification();
   })());
 });
