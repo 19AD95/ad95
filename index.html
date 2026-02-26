@@ -5427,7 +5427,7 @@ function _openLogEditor(log) {
 }
 
 
-function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 21) ? 'light' : 'dark'; }
+function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 22) ? 'light' : 'dark'; }
 function applyTheme(t) {
   LS.set('theme', t);
   const resolved = t === 'auto' ? autoThemeForTime() : t;
