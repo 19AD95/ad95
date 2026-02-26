@@ -428,9 +428,6 @@
 <script>
 'use strict';
 
-// ── APP VERSION & UPDATE ───────────────────────────────────────────────────
-const GITHUB_REPO_URL = 'https://github.com/19AD95/ad95';
-
 // ── STATE ──────────────────────────────────────────────────────────────────
 const S = {
   config: null,
@@ -557,9 +554,12 @@ const IDBLogs = {
   },
 };
 
-
-
-function todayStr() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
+let _todayStrCache = '', _todayStrDate = -1;
+function todayStr() {
+  const d = new Date(), day = d.getDate();
+  if (day !== _todayStrDate) { _todayStrDate = day; _todayStrCache = d.toISOString().slice(0,10).replace(/-/g,''); }
+  return _todayStrCache;
+}
 function todayFilename() { return `22101995${todayStr()}HT.md`; }
 
 function parseTime(str) {
@@ -582,6 +582,13 @@ function fmtMs(ms) {
 
 // ── VAULT PATHS ─────────────────────────────────────────────────────────────
 // All sub-folder paths are relative to the vault root
+const TB_PATHS = [
+  ['0 - Personal Space', 'Time Blocks'],
+  ['Time Blocks'],
+  ['time blocks'],
+  ['TimeBlocks'],
+  ['0 - Personal Space', 'time blocks'],
+];
 const VAULT_PATHS = {
   habitTracker: ['0 - Personal Space', 'Habit Tracker'],
   habitData:    ['0 - Personal Space', 'Habit Tracker', 'data'],
@@ -611,7 +618,7 @@ async function deriveSubHandles() {
     S.eventsDirHandle       = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.events, true);
     // Try multiple candidate paths for Time Blocks
     S.timeBlocksDirHandle = null;
-    for (const p of [VAULT_PATHS.timeBlocks, ['Time Blocks'], ['time blocks'], ['TimeBlocks'], ['0 - Personal Space', 'time blocks']]) {
+    for (const p of TB_PATHS) {
       S.timeBlocksDirHandle = await _navSubDir(S.vaultDirHandle, p, false);
       if (S.timeBlocksDirHandle) break;
     }
@@ -743,29 +750,19 @@ async function loadTemplate() {
     let tbDir = S.timeBlocksDirHandle;
     if (!tbDir) {
       // Try several candidate paths before falling back to vault root
-      const candidates = [
-        VAULT_PATHS.timeBlocks,                          // 0 - Personal Space/Time Blocks
-        ['Time Blocks'],                                  // directly under vault root
-        ['time blocks'],
-        ['TimeBlocks'],
-        ['0 - Personal Space', 'time blocks'],
-      ];
-      for (const path of candidates) {
+      for (const path of TB_PATHS) {
         tbDir = await _navSubDir(S.vaultDirHandle, path, false);
         if (tbDir) { S.timeBlocksDirHandle = tbDir; break; }
       }
     }
     let schedule = [];
-    console.log('[loadTemplate] tbDir resolved:', tbDir?.name || 'null');
     if (tbDir) {
       schedule = await loadScheduleFromTimeBlocksDir(tbDir);
     }
     // Fallback: scan vault root itself for time block files
     if (!schedule.length) {
-      console.log('[loadTemplate] Falling back to vault root scan');
-      schedule = await loadScheduleFromTimeBlocksDir(S.vaultDirHandle);
+        schedule = await loadScheduleFromTimeBlocksDir(S.vaultDirHandle);
     }
-    console.log('[loadTemplate] Final schedule length:', schedule.length);
 
     // Always use freshly loaded vault data; local edits are synced to vault immediately
     S.config = { schedule, habitDefinitions, habitTracker };
@@ -819,14 +816,12 @@ async function loadScheduleFromTimeBlocksDir(dir) {
   try {
     for await (const entry of dir.values()) {
       if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue;
-      console.log('[TimeBlocks] Reading:', entry.name);
-      const raw = await (await entry.getFile()).text();
+        const raw = await (await entry.getFile()).text();
       const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const fm = text.match(/^---\n([\s\S]+?)\n---/);
       if (!fm) { console.log('[TimeBlocks]', entry.name, '— no frontmatter found'); continue; }
       const yaml = fm[1];
-      console.log('[TimeBlocks]', entry.name, '— yaml keys:', yaml.split('\n').filter(l => /^\w/.test(l)).join(', '));
-
+  
       // ── Daily Routine ──
       if (yaml.includes('daily-routine:')) {
         const block = yaml.match(/daily-routine:\s*\n([\s\S]*?)(?=\n\w|$)/);
@@ -982,7 +977,6 @@ async function writeHabitData() {
     }
   }
 }
-
 
 // ── PARSE Habit Tracker.md (kebab-case format) ─────────────────────────────
 // Handles: habit-definition: and habit-tracker: keys
@@ -1173,8 +1167,16 @@ function decrementHabit(key) {
 }
 
 // ── SCHEDULE HELPERS ───────────────────────────────────────────────────────
-// Returns only schedule items that apply to today based on their repeat field
+// Returns only schedule items that apply to today based on their repeat field.
+// Memoized per JS tick — multiple callers in the same tick share one computation.
+let _todaySchedCache = null;
 function getTodaySchedule() {
+  if (_todaySchedCache) return _todaySchedCache;
+  _todaySchedCache = _getTodaySchedule();
+  queueMicrotask(() => { _todaySchedCache = null; });
+  return _todaySchedCache;
+}
+function _getTodaySchedule() {
   const all = S.config?.schedule || [];
   const now = new Date();
   const todayISO = now.toISOString().slice(0,10); // YYYY-MM-DD
@@ -1325,34 +1327,6 @@ function syncAlarmsToSW() {
   navigator.serviceWorker.controller.postMessage({ type: 'SYNC_ALARMS', alarms });
 }
 
-// ── FORCE SW UPDATE ─────────────────────────────────────────────────────────
-// When the user saves schedule edits, tell any waiting SW to take over
-// immediately so the new alarm times are registered right away.
-async function forceSwUpdate() {
-  try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) return;
-
-    // If there's a waiting SW (new version), tell it to skip waiting
-    if (reg.waiting) {
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      // Wait for the new SW to take control, then re-sync alarms
-      await new Promise(resolve => {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          syncAlarmsToSW();
-          resolve();
-        }, { once: true });
-      });
-    } else {
-      // Same SW version — just re-sync the alarms with updated schedule
-      syncAlarmsToSW();
-    }
-  } catch (err) {
-    console.warn('forceSwUpdate failed:', err);
-    syncAlarmsToSW(); // fallback: at least re-sync
-  }
-}
-
 function showAlarmModal(idx) {
   S.shownAlarms[idx]=Date.now();
   const item=getTodaySchedule()[idx]; if(!item) return;
@@ -1433,7 +1407,6 @@ function playBeep() {
     osc.start(); osc.stop(ctx.currentTime+0.4);
   } catch{}
 }
-
 
 // ── RENDER — COUNTDOWN ─────────────────────────────────────────────────────
 function renderCountdown() {
@@ -1637,8 +1610,6 @@ function tickCountdown() {
 
   renderCountdown();
 }
-
-
 
 // ── POMODORO ENGINE ────────────────────────────────────────────────────────
 const POMO = {
@@ -2644,7 +2615,6 @@ function showEditHabitSheet(key) {
   });
 }
 
-
 function showManualModal(key) {
   const cfg=S.config?.habitDefinitions?.[key]; if (!cfg) return;
   const raw=S.habitData[key]||0;
@@ -2823,7 +2793,7 @@ function renderTBList(container, items, emptyMsg, emptyIcon) {
       showEditSchedulePopup(item.time, item.activity, item.repeat, (newTime, newAct, newRepeat) => {
         S.config.schedule[globalIdx] = { ...S.config.schedule[globalIdx], time: newTime, activity: newAct, repeat: newRepeat || 'daily' };
         try { S.config.schedule.sort((a,b) => schedDate(a.time)-schedDate(b.time)); } catch {}
-        LS.set('lastConfig', S.config); saveScheduleToVault(); forceSwUpdate();
+        LS.set('lastConfig', S.config); saveScheduleToVault(); syncAlarmsToSW();
         renderScheduleTab();
       });
     });
@@ -2838,7 +2808,7 @@ function renderTBList(container, items, emptyMsg, emptyIcon) {
       if (globalIdx < 0) return;
       if (!confirm(`Delete "${item.activity}"?`)) return;
       S.config.schedule.splice(globalIdx, 1);
-      LS.set('lastConfig', S.config); saveScheduleToVault(); forceSwUpdate();
+      LS.set('lastConfig', S.config); saveScheduleToVault(); syncAlarmsToSW();
       renderScheduleTab();
       showToast('🗑 Block deleted');
     });
@@ -3129,7 +3099,7 @@ function renderScheduledTab(el) {
         showEditSchedulePopup(item.time,item.activity,item.repeat,(newTime,newAct,newRepeat)=>{
           S.config.schedule[globalIdx]={...S.config.schedule[globalIdx],time:newTime,activity:newAct,repeat:newRepeat||'once'};
           try{S.config.schedule.sort((a,b)=>schedDate(a.time)-schedDate(b.time));}catch{}
-          LS.set('lastConfig',S.config);saveScheduleToVault();forceSwUpdate();
+          LS.set('lastConfig',S.config);saveScheduleToVault();syncAlarmsToSW();
           buildCalGrid();buildEventList();
         }, 'scheduled');
       });
@@ -3141,7 +3111,7 @@ function renderScheduledTab(el) {
         if(globalIdx<0) return;
         if(!confirm(`Delete "${item.activity}"?`)) return;
         S.config.schedule.splice(globalIdx,1);
-        LS.set('lastConfig',S.config);saveScheduleToVault();forceSwUpdate();
+        LS.set('lastConfig',S.config);saveScheduleToVault();syncAlarmsToSW();
         buildCalGrid();buildEventList();
         showToast('🗑 Deleted');
       });
@@ -3267,7 +3237,7 @@ function showMultiDateAddSheet(initialDates, onDone) {
         S.config.schedule.push({_id:genItemId(),activity,time:row.time,repeat:'once',createdOn:row.iso,blockType:'scheduled'});
       });
       try{S.config.schedule.sort((a,b)=>schedDate(a.time)-schedDate(b.time));}catch{}
-      LS.set('lastConfig',S.config); saveScheduleToVault(); forceSwUpdate();
+      LS.set('lastConfig',S.config); saveScheduleToVault(); syncAlarmsToSW();
       close();
       showToast(`✓ ${rows.length} block${rows.length!==1?'s':''} added`);
       if(onDone) onDone();
@@ -3835,7 +3805,7 @@ function showAddScheduleSheetForDate(isoDate, onDone) {
     try { S.config.schedule.sort((a, b) => schedDate(a.time) - schedDate(b.time)); } catch {}
     LS.set('lastConfig', S.config);
     saveScheduleToVault();
-    forceSwUpdate();
+    syncAlarmsToSW();
     close();
     showToast('✓ Time Block added');
     if (onDone) onDone();
@@ -4049,7 +4019,7 @@ function showAddScheduleSheet(onDone, _forcedBlockType) {
       try { S.config.schedule.sort((x, y) => schedDate(x.time) - schedDate(y.time)); } catch {}
       LS.set('lastConfig', S.config);
       saveScheduleToVault();
-      forceSwUpdate();
+      syncAlarmsToSW();
       close();
       onDone();
       showToast('✓ Time Block added');
@@ -4312,7 +4282,6 @@ async function showVaultBackups() {
   }
 }
 
-
 // ── OUTPUT FORMAT HELPER ────────────────────────────────────────────────────
 // Replaces Obsidian-style {{date:FORMAT}} tokens in a path template.
 // Supports: YYYY MM DD HH mm ss (and any combo e.g. YYYYMMDDHHmmss)
@@ -4327,7 +4296,6 @@ function applyDateFormat(template, d) {
       .replace('ss',   String(d.getSeconds()).padStart(2,'0'));
   });
 }
-
 
 async function pickLogTemplateFile() {
   try {
@@ -4599,7 +4567,6 @@ async function renderEventsCard() {
 
 // ── END EVENTS SYSTEM ──────────────────────────────────────────────────────
 
-
 // ── LOG WRITING HELPERS ────────────────────────────────────────────────────
 function sanitizeForYAML(input) {
   if (typeof input !== 'string') return input;
@@ -4786,7 +4753,6 @@ async function _tryWriteLog(rootHandle, idbEntry, content, subDirs, baseFilename
     return false;
   }
 }
-
 
 // ── LOG TEXT POPUP ───────────────────────────────────────────────────────────
 function showLogTextPopup() {
@@ -5424,8 +5390,7 @@ function _openLogEditor(log) {
   setTimeout(() => ta.focus(), 100);
 }
 
-
-function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 23) ? 'light' : 'dark'; }
+function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 21) ? 'light' : 'dark'; }
 function applyTheme(t) {
   LS.set('theme', t);
   const resolved = t === 'auto' ? autoThemeForTime() : t;
@@ -5498,7 +5463,6 @@ function showSettings() {
       + '</div>';
   }
 
-
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
   const backupSection = '';
 
@@ -5534,7 +5498,6 @@ function showSettings() {
 
     ${batterySection}
 
-
     <button class="btn btn-ghost" style="width:100%" id="s-close">Close</button>
   </div>`;
   document.body.appendChild(ov);
@@ -5542,7 +5505,6 @@ function showSettings() {
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
   ov.querySelector('#s-close').addEventListener('click',close);
   ov.querySelector('#s-change-vault').addEventListener('click',async()=>{ close(); const ok=await pickVaultFolder(); if(ok){ await loadFromVault(); renderAll(); }});
-
 
   ov.querySelector('#s-notif')?.addEventListener('click',async()=>{ S.notifPermission=await Notification.requestPermission(); close(); showSettings(); });
   // Notifications toggle (soft on/off when permission is granted)
@@ -5592,35 +5554,6 @@ function showSettings() {
     await showVaultBackups();
   });
 
-}
-
-// ── UPDATE BANNER ────────────────────────────────────────────────────────────
-// waitingSW: the ServiceWorker instance in "waiting" state (has new code ready)
-function showUpdateBanner(waitingSW) {
-  if (document.getElementById('update-banner')) return; // already showing
-  const banner = document.createElement('div');
-  banner.id = 'update-banner';
-  banner.style.cssText = [
-    'position:fixed;bottom:80px;left:50%;transform:translateX(-50%)',
-    'background:var(--accent);color:var(--bg)',
-    'font-family:var(--font-mono);font-size:12px;font-weight:700',
-    'padding:10px 18px;border-radius:20px',
-    'display:flex;align-items:center;gap:10px',
-    'box-shadow:0 4px 20px rgba(0,255,136,.4)',
-    'z-index:9999;white-space:nowrap'
-  ].join(';');
-  banner.innerHTML = '⬆ Update ready  <button style="background:var(--bg);color:var(--accent);border:none;border-radius:10px;padding:4px 10px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">Update & Reload</button>';
-  banner.querySelector('button').addEventListener('click', () => {
-    banner.querySelector('button').textContent = 'Updating…';
-    if (waitingSW) {
-      // Tell the waiting SW to activate — it will fetch all fresh files and take over.
-      // The controllerchange listener in boot() calls location.reload(true) when done.
-      waitingSW.postMessage({ type: 'SKIP_WAITING' });
-    } else {
-      location.reload(true);
-    }
-  });
-  document.body.appendChild(banner);
 }
 
 // ── INSTALL GUIDE ──────────────────────────────────────────────────────────
@@ -5779,7 +5712,6 @@ function showInstallGuide() {
   });
 }
 
-
 function showToast(msg) {
   document.querySelector('.toast')?.remove();
   const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
@@ -5819,7 +5751,6 @@ function showFirstRunSetup() {
 // ── ALARM STATUS BANNER ──────────────────────────────────────────────────────
 // Shows a persistent in-app strip under the header indicating whether
 // background alarms are armed. Also controls the OS tray status notification.
-
 
 // ── RECONNECT BANNER ───────────────────────────────────────────────────────
 function showReconnectBanner() {
@@ -5874,7 +5805,6 @@ function showBatteryBanner() {
     banner.remove();
   });
 }
-
 
 // ── TODAY SCHEDULE POPUP ──────────────────────────────────────────────────
 function showTodaySchedulePopup() {
@@ -6042,7 +5972,6 @@ function buildSkeleton() {
         <button class="habit-done-pill" id="habit-done-pill" style="display:flex;width:100%;border-radius:0 0 var(--radius) var(--radius);padding:10px 16px;justify-content:center;font-size:12px">✓ Done Editing</button>
       </div>
     </div>`;
-
 
   // ── Log text button ──
   document.getElementById('log-text-btn')?.addEventListener('click', () => showLogTextPopup());
@@ -6246,35 +6175,6 @@ async function boot() {
       }
     });
 
-    // ── Native SW update detection ────────────────────────────────────────────
-    // When a new sw.js is deployed, the browser downloads it and holds it as
-    // a "waiting" SW. We detect this and show the update banner.
-    function onWaitingSW(reg) {
-      if (reg.waiting) showUpdateBanner(reg.waiting);
-    }
-
-    // Check immediately (page might have loaded with a waiting SW already)
-    if (swReg) {
-      onWaitingSW(swReg);
-      // Also fires when a new SW finishes installing while app is open
-      swReg.addEventListener('updatefound', () => {
-        const newSW = swReg.installing;
-        if (!newSW) return;
-        newSW.addEventListener('statechange', () => {
-          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-            // New SW waiting — real update available
-            onWaitingSW(swReg);
-          }
-        });
-      });
-      // Poll for updates every 60s while app is open (browser only auto-checks on navigation)
-      setInterval(() => swReg.update().catch(() => {}), 60000);
-    }
-
-    // When controller changes (new SW activated), reload to run new code
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      location.reload(true);
-    });
   }
 
   document.getElementById('btn-reload').addEventListener('click', async()=>{
