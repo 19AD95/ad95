@@ -1,4 +1,4 @@
-const CACHE_NAME = 'habit-tracker-v19';
+const CACHE_NAME = 'habit-tracker-v20';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
 
 const STATUS_TAG = 'alarm-watcher'; // persistent status notification tag
@@ -486,14 +486,27 @@ self.addEventListener('notificationclick', e => {
 
 // ── NOTIFICATION CLOSE ────────────────────────────────────────────────────────
 self.addEventListener('notificationclose', e => {
-  if (e.notification.tag === STATUS_TAG) {
-    // requireInteraction: true should block swipe-dismiss, but if the OS
-    // dismisses it anyway (e.g. "Clear all"), immediately repost it —
-    // unless the user has explicitly disabled it in Settings.
-    e.waitUntil((async () => {
+  if (e.notification.tag !== STATUS_TAG) return;
+
+  // Repost the status notification as soon as it is dismissed — infinitely,
+  // until the user explicitly disables it in Settings (statusNotifEnabled===false).
+  e.waitUntil((async () => {
+    // Retry loop: attempt up to 10 times with growing delays.
+    // Each attempt checks the user pref first so we stop immediately if they
+    // disable the tray notification in Settings while retrying.
+    const delays = [300, 600, 1200, 2000, 3000, 4000, 5000, 6000, 7000, 8000];
+    for (const delay of delays) {
+      await new Promise(r => setTimeout(r, delay));
       const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => undefined);
-      if (pref === false) return;
+      if (pref === false) return; // user turned it off — stop
+      // Check if it has already been reposted by another path (keep-alive tick, etc.)
+      const existing = await self.registration.getNotifications({ tag: STATUS_TAG }).catch(() => []);
+      if (existing.length) return; // already showing — done
       await updateStatusNotification();
-    })());
-  }
+      // Confirm it actually showed
+      const check = await self.registration.getNotifications({ tag: STATUS_TAG }).catch(() => []);
+      if (check.length) return; // success
+      // If still not showing, continue loop and try again
+    }
+  })());
 });

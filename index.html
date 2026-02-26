@@ -5487,28 +5487,33 @@ function showSettings() {
   const _dotColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
   const _textColor = _aState === 'active' ? 'var(--accent)' : _aState === 'noperm' ? 'var(--warn)' : 'var(--muted)';
 
-  const notifSection = `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 0 6px">
-      <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${_dotColor};${_aState==='active'?'box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite':''}"></div>
-      <div style="flex:1;font-size:12px;font-family:var(--font-mono);color:${_textColor};line-height:1.5">
-        ${_aLabel}
-        <div style="font-size:11px;color:var(--muted);margin-top:1px">${_aSub}</div>
-      </div>
-    </div>
-    ${np === 'default' ? '<button class="btn btn-green" style="width:100%;margin-top:4px" id="s-notif">Enable Notifications</button>' : ''}
-    ${np !== 'granted' && notifBlocked ? `<div class="notif-fix" style="margin-top:8px">${hostedRemotely
-      ? '<b>Blocked by your hosting provider.</b><br>Host locally or add <code>Permissions-Policy: notifications=(self)</code> to your <code>_headers</code> file.'
-      : 'To unblock: <b>Chrome → 🔒 lock → Site settings → Notifications → Allow</b> then reload.'
-    }</div>` : ''}
-    ${np === 'granted' ? `
-    <div class="s-row" id="s-tray-row" style="margin-top:4px">
-      <div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status in notification shade</div></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span class="pill ${trayEnabled ? 'pill-green' : 'pill-amber'}" id="s-tray-pill">${trayEnabled ? 'ON ✓' : 'OFF'}</span>
-        <div class="asb-toggle-sw ${trayEnabled ? 'on' : 'off'}" id="s-tray-sw" style="cursor:pointer"></div>
-      </div>
-    </div>` : ''}
-  `;
+  // Build notifSection with string concatenation — avoids nested template literal crash
+  let notifSection = '';
+  notifSection += '<div style="display:flex;align-items:center;gap:10px;padding:10px 0 6px">';
+  notifSection += '<div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:'
+    + _dotColor + ';'
+    + (_aState === 'active' ? 'box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite' : '')
+    + '"></div>';
+  notifSection += '<div style="flex:1;font-size:12px;font-family:var(--font-mono);color:' + _textColor + ';line-height:1.5">'
+    + _aLabel
+    + '<div style="font-size:11px;color:var(--muted);margin-top:1px">' + _aSub + '</div></div>';
+  notifSection += '</div>';
+  if (np === 'default')
+    notifSection += '<button class="btn btn-green" style="width:100%;margin-top:4px" id="s-notif">Enable Notifications</button>';
+  if (np !== 'granted' && notifBlocked)
+    notifSection += '<div class="notif-fix" style="margin-top:8px">'
+      + (hostedRemotely
+          ? '<b>Blocked by your hosting provider.</b><br>Host locally or add <code>Permissions-Policy: notifications=(self)</code> to your <code>_headers</code> file.'
+          : 'To unblock: <b>Chrome &rarr; lock &rarr; Site settings &rarr; Notifications &rarr; Allow</b> then reload.')
+      + '</div>';
+  if (np === 'granted')
+    notifSection += '<div class="s-row" id="s-tray-row" style="margin-top:4px">'
+      + '<div><div class="s-label">Tray Notification</div><div class="s-sub">Persistent status in notification shade</div></div>'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<span class="pill ' + (trayEnabled ? 'pill-green' : 'pill-amber') + '" id="s-tray-pill">' + (trayEnabled ? 'ON &#10003;' : 'OFF') + '</span>'
+      + '<div class="asb-toggle-sw ' + (trayEnabled ? 'on' : 'off') + '" id="s-tray-sw" style="cursor:pointer"></div>'
+      + '</div></div>';
+
 
   const vaultName2 = LS.get('vaultFolderName') || 'vault';
   const backupSection = '';
