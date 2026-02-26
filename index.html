@@ -2265,16 +2265,7 @@ function renderHabitBars() {
 
       const iconEl = col.querySelector('.habit-icon');
       iconEl.addEventListener('click', () => {
-        if (isBoolHabit) {
-          // Instant toggle — no modal, immediate visual feedback
-          const newVal = (S.habitData[key] || 0) >= 1 ? 0 : 1;
-          S.habitData[key] = newVal;
-          writeHabitData();
-          renderHabitBars();
-          showToast(newVal >= 1 ? (cfg.messages?.[1] || '✓ Done!') : 'Cleared');
-        } else {
-          showManualModal(key);
-        }
+        showManualModal(key);
       });
 
       // Double-tap → jump to schedule
