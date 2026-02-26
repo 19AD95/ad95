@@ -5679,17 +5679,17 @@ function showSettings() {
           msg.textContent = 'New version available. Tap below to reload and apply it now.';
           doUpdate.addEventListener('click', async () => {
             doUpdate.textContent = 'Updating…';
-            // Update stored SHA so after reload we don't re-trigger this flow
+            // Save new SHA first so after reload we don’t re-trigger this flow
             LS.set('appFileSha', remoteSha);
-            // Delete cached index.html from all caches so the fresh copy is fetched from network
             try {
+              // Nuke every cache so the SW can’t serve stale files after reload
               const cacheNames = await caches.keys();
-              await Promise.all(cacheNames.map(async name => {
-                const c = await caches.open(name);
-                await c.delete('./index.html');
-                await c.delete(location.href);
-              }));
+              await Promise.all(cacheNames.map(n => caches.delete(n)));
+              // Unregister the SW so it can’t intercept the reload request
+              const swRegOld = await navigator.serviceWorker.getRegistration();
+              if (swRegOld) await swRegOld.unregister();
             } catch {}
+            // SW is gone — reload fetches straight from the network
             location.reload(true);
           });
         }
