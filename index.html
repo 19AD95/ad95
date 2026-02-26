@@ -5616,10 +5616,6 @@ function showSettings() {
     const msg      = ov.querySelector('#s-update-msg');
     const doUpdate = ov.querySelector('#s-do-update');
 
-    // The SHA stored in localStorage is set when the user downloads an update.
-    // On first load it's null — we fetch the current SHA and store it as baseline.
-    const storedSha = LS.get('appFileSha');
-
     verLabel.textContent = 'checking…';
     try {
       // Check if a new SW is already waiting (installed but not yet active)
@@ -5632,70 +5628,45 @@ function showSettings() {
         doUpdate.addEventListener('click', () => {
           doUpdate.textContent = 'Installing…';
           swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          // controllerchange listener in boot() will reload the page
         });
         return;
       }
 
-      // Otherwise check GitHub to see if there's a newer version than what's running
-      const apiRes = await fetch(GITHUB_API_URL, {
-        cache: 'no-store',
-        headers: { 'Accept': 'application/vnd.github.v3+json' }
-      });
+      // Use GitHub API to get the current SHA of index.html in the repo
+      const apiRes = await fetch(GITHUB_API_URL, { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } });
       if (!apiRes.ok) throw new Error('GitHub API ' + apiRes.status);
       const meta = await apiRes.json();
       const remoteSha = meta.sha;
 
+      // The stored SHA was saved the last time the user successfully updated
+      const storedSha = LS.get('appFileSha');
+
       if (!storedSha) {
+        // First time — just record current SHA, nothing to update
         LS.set('appFileSha', remoteSha);
         verLabel.textContent = 'up to date';
-        return;
-      }
-
-      if (remoteSha !== storedSha) {
-        // New version on GitHub — browser will pick it up on next SW update check
-        // Force-trigger an update check now
-        verLabel.textContent = 'update available — checking…';
-        try { await swReg?.update(); } catch {}
-        // After update(), if sw.js changed the browser will download new SW
-        // Give it a moment then re-check for waiting SW
-        await new Promise(r => setTimeout(r, 2000));
-        const reg2 = await navigator.serviceWorker?.getRegistration();
-        if (reg2?.waiting) {
-          verLabel.textContent = 'update ready to install';
-          pill.style.display = 'inline-flex';
-          bar.style.display  = 'flex';
-          msg.textContent = 'New version downloaded. Tap below to install.';
-          doUpdate.addEventListener('click', () => {
-            doUpdate.textContent = 'Installing…';
-            reg2.waiting.postMessage({ type: 'SKIP_WAITING' });
-          });
-        } else {
-          // SW didn't change (only index.html updated), so no waiting SW exists.
-          // A hard reload after clearing the cached index.html is all that's needed.
-          verLabel.textContent = 'update ready';
-          pill.style.display = 'inline-flex';
-          bar.style.display  = 'flex';
-          msg.textContent = 'New version available. Tap below to reload and apply it now.';
-          doUpdate.addEventListener('click', async () => {
-            doUpdate.textContent = 'Updating…';
-            // Save new SHA first so after reload we don’t re-trigger this flow
-            LS.set('appFileSha', remoteSha);
-            try {
-              // Nuke every cache so the SW can’t serve stale files after reload
-              const cacheNames = await caches.keys();
-              await Promise.all(cacheNames.map(n => caches.delete(n)));
-              // Unregister the SW so it can’t intercept the reload request
-              const swRegOld = await navigator.serviceWorker.getRegistration();
-              if (swRegOld) await swRegOld.unregister();
-            } catch {}
-            // SW is gone — reload fetches straight from the network
-            location.reload(true);
-          });
-        }
-      } else {
+        pill.style.display = 'none';
+      } else if (remoteSha === storedSha) {
         verLabel.textContent = 'up to date';
         pill.style.display = 'none';
+      } else {
+        verLabel.textContent = 'update ready';
+        pill.style.display = 'inline-flex';
+        bar.style.display  = 'flex';
+        msg.textContent = 'New version available. Tap below to reload and apply it now.';
+        doUpdate.addEventListener('click', async () => {
+          doUpdate.textContent = 'Updating…';
+          // Save new SHA before reload so on next open it shows up to date
+          LS.set('appFileSha', remoteSha);
+          try {
+            // Nuke all caches and unregister SW so reload fetches fresh from network
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(n => caches.delete(n)));
+            const swRegOld = await navigator.serviceWorker.getRegistration();
+            if (swRegOld) await swRegOld.unregister();
+          } catch {}
+          location.reload(true);
+        });
       }
     } catch(e) {
       verLabel.textContent = 'could not check — offline?';
