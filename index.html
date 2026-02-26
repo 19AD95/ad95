@@ -429,8 +429,6 @@
 'use strict';
 
 // ── APP VERSION & UPDATE ───────────────────────────────────────────────────
-const GITHUB_RAW_URL  = 'https://raw.githubusercontent.com/19AD95/ad95/main/index.html';
-const GITHUB_API_URL  = 'https://api.github.com/repos/19AD95/ad95/contents/index.html';
 const GITHUB_REPO_URL = 'https://github.com/19AD95/ad95';
 
 // ── STATE ──────────────────────────────────────────────────────────────────
@@ -5427,7 +5425,7 @@ function _openLogEditor(log) {
 }
 
 
-function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 23) ? 'light' : 'dark'; }
+function autoThemeForTime() { const h = new Date().getHours(); return (h >= 7 && h < 21) ? 'light' : 'dark'; }
 function applyTheme(t) {
   LS.set('theme', t);
   const resolved = t === 'auto' ? autoThemeForTime() : t;
@@ -5536,20 +5534,6 @@ function showSettings() {
 
     ${batterySection}
 
-    <div class="s-section" id="s-update-section">
-      <div class="s-section-title">App Update</div>
-      <div class="s-row" style="align-items:center">
-        <div>
-          <div class="s-label">Vault Dex</div>
-          <div class="s-sub" id="s-version-label">checking for updates…</div>
-        </div>
-        <span id="s-update-pill" class="pill pill-amber" style="display:none">UPDATE</span>
-      </div>
-      <div id="s-update-bar" style="margin-top:10px;display:none;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6" id="s-update-msg"></div>
-        <button class="btn btn-green" id="s-do-update" style="width:100%">⬆ Apply Update</button>
-      </div>
-    </div>
 
     <button class="btn btn-ghost" style="width:100%" id="s-close">Close</button>
   </div>`;
@@ -5608,83 +5592,6 @@ function showSettings() {
     await showVaultBackups();
   });
 
-  // ── Update check (SHA-based — triggers on any file change, no version needed)
-  (async () => {
-    const verLabel = ov.querySelector('#s-version-label');
-    const pill     = ov.querySelector('#s-update-pill');
-    const bar      = ov.querySelector('#s-update-bar');
-    const msg      = ov.querySelector('#s-update-msg');
-    const doUpdate = ov.querySelector('#s-do-update');
-
-    verLabel.textContent = 'checking…';
-    try {
-      // Check if a new SW is already waiting (installed but not yet active)
-      const swReg = await navigator.serviceWorker?.getRegistration();
-      if (swReg?.waiting) {
-        verLabel.textContent = 'update ready to install';
-        pill.style.display = 'inline-flex';
-        bar.style.display  = 'flex';
-        msg.textContent = 'A new version is downloaded and ready. Tap below to install it now.';
-        doUpdate.addEventListener('click', () => {
-          doUpdate.textContent = 'Installing…';
-          swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        });
-        return;
-      }
-
-      // Use GitHub API to get the current SHA of index.html in the repo
-      const apiRes = await fetch(GITHUB_API_URL, { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } });
-      if (!apiRes.ok) throw new Error('GitHub API ' + apiRes.status);
-      const meta = await apiRes.json();
-      const remoteSha = meta.sha;
-
-      // The stored SHA was saved the last time the user successfully updated
-      const storedSha = LS.get('appFileSha');
-
-      if (!storedSha) {
-        // First time — just record current SHA, nothing to update
-        LS.set('appFileSha', remoteSha);
-        verLabel.textContent = 'up to date';
-        pill.style.display = 'none';
-      } else if (remoteSha === storedSha) {
-        verLabel.textContent = 'up to date';
-        pill.style.display = 'none';
-      } else {
-        verLabel.textContent = 'update ready';
-        pill.style.display = 'inline-flex';
-        bar.style.display  = 'flex';
-        msg.textContent = 'New version available. Tap below to reload and apply it now.';
-        doUpdate.addEventListener('click', async () => {
-          doUpdate.textContent = 'Updating…';
-          doUpdate.disabled = true;
-          try {
-            // 1. Save new SHA so next check shows "up to date"
-            LS.set('appFileSha', remoteSha);
-            // 2. Nuke all existing caches
-            const cacheNames = await caches.keys();
-            await Promise.all(cacheNames.map(n => caches.delete(n)));
-            // 3. Write the already-fetched new HTML into a fresh cache entry so the
-            //    re-registered SW serves it immediately on reload, not a stale copy
-            const freshCache = await caches.open('habit-tracker-v22');
-            await freshCache.put('./index.html', new Response(remoteHTML, {
-              headers: { 'Content-Type': 'text/html; charset=utf-8' }
-            }));
-            // 4. Unregister SW so it re-registers cleanly on next load
-            const swRegOld = await navigator.serviceWorker?.getRegistration();
-            if (swRegOld) await swRegOld.unregister();
-            // 5. Reload — SW re-registers, finds new index.html already in cache
-            location.reload(true);
-          } catch(err) {
-            doUpdate.textContent = 'Failed — try again';
-            doUpdate.disabled = false;
-            console.error('[update]', err);
-          }
-        });
-      }
-    } catch(e) {
-      verLabel.textContent = 'could not check — offline?';
-    }
-  })();
 }
 
 // ── UPDATE BANNER ────────────────────────────────────────────────────────────
