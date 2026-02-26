@@ -105,7 +105,7 @@
   .sched-item.current{background:rgba(0,255,136,.07)}
   .sched-item.past{opacity:.4}
   .sched-item.current::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:60%;background:var(--accent);border-radius:2px}
-  .sched-time{font-size:11px;font-family:var(--font-mono);color:var(--muted);min-width:52px}
+  .sched-time{font-size:11px;font-family:var(--font-mono);color:#4a9eff;min-width:52px}
   .sched-act{font-size:14px;flex:1;line-height:1.3}
   .sched-preview{padding:10px 16px 12px;font-size:13px;font-family:var(--font-mono);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
 
@@ -222,7 +222,8 @@
   .sched-tab-item.past{opacity:.38}
   .sched-tab-item.current::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:50%;background:var(--accent);border-radius:0 2px 2px 0}
   .sched-tab-time-block{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:64px;flex-shrink:0}
-  .sched-tab-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent)}
+  .sched-tab-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:#4a9eff}
+  .sched-tab-item.current .sched-tab-time{color:var(--accent)}
   .sched-tab-item.past .sched-tab-time{color:var(--muted)}
   .sched-tab-divider{width:1px;height:32px;background:var(--border);flex-shrink:0}
   .sched-tab-act{font-size:15px;font-weight:600;flex:1;line-height:1.35;color:var(--text)}
@@ -370,7 +371,8 @@
   .tsched-item.now{border-color:rgba(0,255,136,.4);background:rgba(0,255,136,.08)}
   .tsched-item.past{opacity:.38}
   .tsched-item:active{background:var(--border)}
-  .tsched-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:58px;flex-shrink:0}
+  .tsched-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:#4a9eff;min-width:58px;flex-shrink:0}
+  .tsched-item.now .tsched-time{color:var(--accent)}
   .tsched-act{font-size:15px;font-weight:600;flex:1;color:var(--text);line-height:1.3}
   .tsched-badge{font-size:10px;font-family:var(--font-mono);color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;flex-shrink:0}
   .tsched-now-pill{display:inline-flex;align-items:center;background:rgba(0,255,136,.18);border:1px solid rgba(0,255,136,.35);border-radius:6px;padding:2px 8px;font-size:10px;font-family:var(--font-mono);font-weight:800;color:var(--accent);letter-spacing:.5px;flex-shrink:0}
@@ -380,7 +382,8 @@
   .tb-list-item.now-item{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.07)}
   .tb-list-item.past-item{opacity:.38}
   .tb-list-item:active{background:var(--bg3)}
-  .tb-item-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:var(--accent);min-width:60px;flex-shrink:0}
+  .tb-item-time{font-size:13px;font-family:var(--font-mono);font-weight:700;color:#4a9eff;min-width:60px;flex-shrink:0}
+  .tb-list-item.now-item .tb-item-time{color:var(--accent)}
   .tb-item-act{font-size:15px;flex:1;font-weight:600;color:var(--text);line-height:1.3}
   .tb-item-badge{font-size:10px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap}
   .tb-action-btn{width:28px;height:28px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-size:13px;transition:all .12s;border:1px solid var(--border);background:var(--bg3);color:var(--muted)}
@@ -2230,8 +2233,19 @@ function renderHabitBars() {
         <div class="habit-icon${complete ? ' complete' : ''}" data-key="${key}">${cfg.icon}${complete ? `<span style="position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--bg);font-weight:900;border:1.5px solid var(--bg2)">✓</span>` : ''}</div>`;
 
       const iconEl = col.querySelector('.habit-icon');
-      iconEl.addEventListener('click', () => {
-        showManualModal(key);
+      iconEl.addEventListener('click', (e) => {
+        if (isBoolHabit) {
+          // Direct toggle — no modal needed
+          const cur = S.habitData[key] || 0;
+          const newVal = cur >= 1 ? 0 : 1;
+          S.habitData[key] = newVal;
+          writeHabitData();
+          renderHabitBars();
+          showEmojiPop(newVal >= 1 ? '✓' : cfg.icon, iconEl);
+          showToast(newVal >= 1 ? (cfg.messages?.[1] || '✓ Done!') : 'Cleared');
+        } else {
+          showManualModal(key);
+        }
       });
 
       // Double-tap → jump to schedule
@@ -5412,23 +5426,6 @@ function showSettings() {
   const android = isAndroid();
   const batteryDismissed = LS.get('batteryTipDismissed');
 
-  const batterySection = (android && np === 'granted' && !batteryDismissed) ? `
-    <div class="s-section">
-      <div class="s-section-title">⚡ Battery Optimization</div>
-      <div style="background:rgba(255,170,0,.07);border:1px solid rgba(255,170,0,.25);border-radius:12px;padding:14px 16px;font-size:12px;font-family:var(--font-mono);color:var(--text);line-height:1.8">
-        <div style="color:var(--warn);font-weight:700;margin-bottom:6px">🔋 Enable for reliable background alarms</div>
-        Android kills Chrome in the background to save battery — this stops your alarms from firing when the screen is off.<br><br>
-        <b style="color:var(--text)">Fix in 3 taps:</b><br>
-        <span style="color:var(--accent)">1.</span> Settings → Apps → <b>Chrome</b><br>
-        <span style="color:var(--accent)">2.</span> Battery → <b>Unrestricted</b><br>
-        <span style="color:var(--accent)">3.</span> Come back and tap "Done" below
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-ghost" id="s-battery-dismiss" style="flex:1;font-size:13px">✓ Done / Dismiss</button>
-        <button class="btn btn-green" id="s-battery-open" style="flex:2;font-size:13px">Open Android Settings</button>
-      </div>
-    </div>` : '';
-
   const _notifsEnabled = LS.get('notifsEnabled') !== false;
   let notifSection = '';
   if (notifBlocked) {
@@ -5449,9 +5446,8 @@ function showSettings() {
       + '<button class="btn btn-green" style="width:100%;margin-top:8px" id="s-notif">Enable Notifications</button>';
   } else {
     // Granted — show toggle
-    const _swOn = _notifsEnabled ? 'on' : 'off';
     const _swBg = _notifsEnabled ? 'var(--accent)' : 'rgba(120,120,140,.4)';
-    const _swDot = _notifsEnabled ? '14px' : '2px';
+    const _swDot = _notifsEnabled ? '22px' : '2px';
     notifSection = '<div class="s-row" style="align-items:center">'
       + '<div><div class="s-label">Alarm Notifications</div><div class="s-sub">'
       + (_notifsEnabled ? 'Alarms will fire in the background' : 'Alarms are silenced')
@@ -5496,8 +5492,6 @@ function showSettings() {
       ${notifSection}
     </div>
 
-    ${batterySection}
-
     <button class="btn btn-ghost" style="width:100%" id="s-close">Close</button>
   </div>`;
   document.body.appendChild(ov);
@@ -5517,7 +5511,7 @@ function showSettings() {
     const tog = ov.querySelector('#s-notif-toggle');
     const dot = tog?.querySelector('div');
     if (tog) tog.style.background = next ? 'var(--accent)' : 'rgba(120,120,140,.4)';
-    if (dot) dot.style.left = next ? '14px' : '2px';
+    if (dot) dot.style.left = next ? '22px' : '2px';
     // Update sub-label
     const sub = ov.querySelector('#s-notif-toggle')?.closest('.s-row')?.querySelector('.s-sub');
     if (sub) sub.textContent = next ? 'Alarms will fire in the background' : 'Alarms are silenced';
