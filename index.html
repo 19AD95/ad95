@@ -422,6 +422,11 @@
 <script>
 'use strict';
 
+// ── APP VERSION & UPDATE ───────────────────────────────────────────────────
+const GITHUB_RAW_URL  = 'https://raw.githubusercontent.com/19AD95/ad95/main/index.html';
+const GITHUB_API_URL  = 'https://api.github.com/repos/19AD95/ad95/contents/index.html';
+const GITHUB_REPO_URL = 'https://github.com/19AD95/ad95';
+
 // ── STATE ──────────────────────────────────────────────────────────────────
 const S = {
   config: null,
@@ -5536,6 +5541,21 @@ function showSettings() {
 
     ${batterySection}
 
+    <div class="s-section" id="s-update-section">
+      <div class="s-section-title">App Update</div>
+      <div class="s-row" style="align-items:center">
+        <div>
+          <div class="s-label">Vault Dex</div>
+          <div class="s-sub" id="s-version-label">checking for updates…</div>
+        </div>
+        <span id="s-update-pill" class="pill pill-amber" style="display:none">UPDATE</span>
+      </div>
+      <div id="s-update-bar" style="margin-top:10px;display:none;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6" id="s-update-msg"></div>
+        <button class="btn btn-green" id="s-do-update" style="width:100%">⬇ Download Update</button>
+      </div>
+    </div>
+
     <button class="btn btn-ghost" style="width:100%" id="s-close">Close</button>
   </div>`;
   document.body.appendChild(ov);
@@ -5592,6 +5612,94 @@ function showSettings() {
     close();
     await showVaultBackups();
   });
+
+  // ── Update check (SHA-based — triggers on any file change, no version needed)
+  (async () => {
+    const verLabel = ov.querySelector('#s-version-label');
+    const pill     = ov.querySelector('#s-update-pill');
+    const bar      = ov.querySelector('#s-update-bar');
+    const msg      = ov.querySelector('#s-update-msg');
+    const doUpdate = ov.querySelector('#s-do-update');
+
+    // The SHA stored in localStorage is set when the user downloads an update.
+    // On first load it's null — we fetch the current SHA and store it as baseline.
+    const storedSha = LS.get('appFileSha');
+
+    verLabel.textContent = 'checking for updates…';
+    try {
+      // GitHub Contents API returns the current SHA of the file without downloading it
+      const apiRes = await fetch(GITHUB_API_URL, {
+        cache: 'no-store',
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (!apiRes.ok) throw new Error('GitHub API ' + apiRes.status);
+      const meta = await apiRes.json();
+      const remoteSha = meta.sha;
+
+      if (!storedSha) {
+        // First time — store current SHA as baseline, user is up to date
+        LS.set('appFileSha', remoteSha);
+        verLabel.textContent = 'up to date';
+        return;
+      }
+
+      if (remoteSha !== storedSha) {
+        // File changed on GitHub since last update
+        verLabel.textContent = 'update available';
+        pill.style.display = 'inline-flex';
+        bar.style.display  = 'flex';
+        // Get commit message for context
+        let commitNote = '';
+        try {
+          const commitRes = await fetch(
+            `https://api.github.com/repos/19AD95/ad95/commits?path=index.html&per_page=1`,
+            { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
+          );
+          if (commitRes.ok) {
+            const commits = await commitRes.json();
+            commitNote = commits[0]?.commit?.message ? `"${commits[0].commit.message}"` : '';
+          }
+        } catch {}
+        msg.textContent = commitNote
+          ? `Latest change: ${commitNote}. Tap below to download the updated file.`
+          : 'A newer version of Vault Dex is available. Tap below to download it.';
+
+        doUpdate.addEventListener('click', async () => {
+          doUpdate.textContent = '⏳ Downloading…';
+          doUpdate.disabled = true;
+          try {
+            const rawRes = await fetch(GITHUB_RAW_URL, { cache: 'no-store' });
+            if (!rawRes.ok) throw new Error('Download failed');
+            const text = await rawRes.text();
+            const blob = new Blob([text], { type: 'text/html' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'index.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            // Record new SHA so update badge clears after download
+            LS.set('appFileSha', remoteSha);
+            doUpdate.textContent = '✓ Downloaded';
+            pill.style.display = 'none';
+            bar.style.display  = 'none';
+            verLabel.textContent = 'up to date — reload to apply';
+            showToast('✓ index.html downloaded — push to GitHub to deploy');
+          } catch(e) {
+            doUpdate.textContent = '⬇ Download Update';
+            doUpdate.disabled = false;
+            showToast('Download failed — check your connection');
+          }
+        });
+      } else {
+        verLabel.textContent = 'up to date';
+      }
+    } catch(e) {
+      verLabel.textContent = storedSha ? 'offline — last check unavailable' : 'could not reach GitHub';
+    }
+  })();
 }
 
 // ── INSTALL GUIDE ──────────────────────────────────────────────────────────
