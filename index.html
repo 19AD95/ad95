@@ -135,6 +135,31 @@
   .reconnect-btn{padding:8px 16px;background:var(--warn);color:#000;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:var(--font-display);flex-shrink:0}
   .reconnect-btn:active{transform:scale(.95)}
 
+  /* alarm status banner */
+  .alarm-status-banner{margin:10px 20px 0;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;animation:fadeUp .3s ease;transition:background .3s,border-color .3s}
+  .alarm-status-banner.active{background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.25)}
+  .alarm-status-banner.inactive{background:rgba(100,100,120,.07);border:1px solid rgba(100,100,120,.2)}
+  .alarm-status-banner.noperm{background:rgba(255,170,0,.07);border:1px solid rgba(255,170,0,.2)}
+  .asb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .asb-dot.active{background:var(--accent);box-shadow:0 0 6px rgba(0,255,136,.6);animation:asbPulse 2s ease infinite}
+  .asb-dot.inactive{background:var(--muted)}
+  .asb-dot.noperm{background:var(--warn)}
+  .asb-text{flex:1;font-size:11px;font-family:var(--font-mono);line-height:1.5}
+  .asb-text.active{color:var(--accent)}
+  .asb-text.inactive{color:var(--muted)}
+  .asb-text.noperm{color:var(--warn)}
+  .asb-sub{font-size:10px;color:var(--muted);margin-top:1px}
+  .asb-toggle{display:flex;align-items:center;gap:6px;flex-shrink:0;cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);transition:all .15s}
+  .asb-toggle:active{background:var(--border)}
+  .asb-toggle-label{font-size:10px;font-family:var(--font-mono);color:var(--muted);white-space:nowrap}
+  .asb-toggle-sw{width:28px;height:16px;border-radius:8px;position:relative;transition:background .2s;flex-shrink:0}
+  .asb-toggle-sw.on{background:var(--accent)}
+  .asb-toggle-sw.off{background:var(--muted);opacity:.5}
+  .asb-toggle-sw::after{content:'';position:absolute;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .2s}
+  .asb-toggle-sw.on::after{left:14px}
+  .asb-toggle-sw.off::after{left:2px}
+  @keyframes asbPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,.4)}50%{box-shadow:0 0 0 5px rgba(0,255,136,.0)}}
+
   /* first-run setup */
   .setup-screen{position:fixed;inset:0;background:var(--bg);z-index:300;overflow-y:auto;padding:48px 24px calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;justify-content:center}
   .setup-inner{width:100%;max-width:360px;display:flex;flex-direction:column;gap:20px;align-items:center}
@@ -179,6 +204,18 @@
   .theme-seg-btn.active{background:var(--bg2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.18)}
   .empty-state{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.6}
   .toast{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 18px;font-size:13px;font-family:var(--font-mono);color:var(--text);z-index:1000;white-space:normal;max-width:calc(100vw - 40px);text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.5);animation:toastIn .3s ease;pointer-events:none}
+
+  /* ── OFFLINE BANNER ── */
+  #offline-banner{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:#1a1006;border:1.5px solid rgba(255,170,0,.5);border-radius:14px;padding:10px 18px 10px 14px;font-size:13px;font-family:var(--font-mono);color:var(--warn);z-index:2000;white-space:nowrap;max-width:calc(100vw - 32px);box-shadow:0 4px 28px rgba(0,0,0,.6);animation:slideUpBanner .35s cubic-bezier(.34,1.4,.64,1);display:flex;align-items:center;gap:10px;pointer-events:auto}
+  #offline-banner.dismissing{animation:slideDownBanner .28s ease forwards}
+  #offline-banner .ob-icon{font-size:17px;flex-shrink:0}
+  #offline-banner .ob-text{flex:1;line-height:1.3}
+  #offline-banner .ob-text b{color:var(--text);display:block;font-size:13px;margin-bottom:1px}
+  #offline-banner .ob-text span{font-size:11px;color:var(--muted)}
+  #offline-banner .ob-close{width:24px;height:24px;border-radius:7px;border:1px solid rgba(255,170,0,.3);background:rgba(255,170,0,.08);color:var(--warn);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+  #offline-banner .ob-close:active{background:rgba(255,170,0,.2)}
+  @keyframes slideUpBanner{from{opacity:0;transform:translateX(-50%) translateY(24px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  @keyframes slideDownBanner{from{opacity:1;transform:translateX(-50%) translateY(0)}to{opacity:0;transform:translateX(-50%) translateY(24px)}}
 
   @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -1303,7 +1340,9 @@ async function forceSwUpdate() {
 function showAlarmModal(idx) {
   S.shownAlarms[idx]=Date.now();
   const item=getTodaySchedule()[idx]; if(!item) return;
-  const hi=detectHabit(item.activity);
+  // Only show habit action buttons for daily routine items
+  const isRoutine = item.blockType === 'routine' || (!item.blockType && (item.repeat||'daily') === 'daily');
+  const hi = isRoutine ? detectHabit(item.activity) : null;
   const snOpts=S.config.habitTracker?.snoozeOptions||[5,10];
   playBeep();
 
@@ -1342,9 +1381,15 @@ function showAlarmModal(idx) {
     ?`<button class="btn btn-red ad" data-key="${hi.key}" data-fail="1" style="flex:1">✕ Failed</button>`
     :`<button class="btn btn-ghost ad" style="flex:1">Dismiss</button>`;
 
+  // Badge indicating type
+  const typeBadge = item.blockType === 'scheduled'
+    ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.3);border-radius:20px;font-size:10px;font-family:var(--font-mono);color:#4a9eff;margin-bottom:10px">📅 Scheduled</div>`
+    : `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.25);border-radius:20px;font-size:10px;font-family:var(--font-mono);color:var(--accent);margin-bottom:10px">🔁 Daily Routine</div>`;
+
   const ov=document.createElement('div'); ov.className='modal-overlay center alarm-modal-ov';
   ov.innerHTML=`<div class="modal cm-modal" style="max-width:340px;width:calc(100% - 32px)">
     <div style="text-align:center;font-size:11px;font-family:var(--font-mono);color:var(--accent);margin-bottom:10px;letter-spacing:1.5px;text-transform:uppercase">⏰ Time for Activity</div>
+    <div style="text-align:center">${typeBadge}</div>
     <div class="alarm-activity">${item.activity}</div>
     <div class="alarm-time">${item.time}</div>
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">${habitBtns}${dismissBtn}</div>
@@ -5698,6 +5743,95 @@ function showFirstRunSetup() {
   });
 }
 
+// ── ALARM STATUS BANNER ──────────────────────────────────────────────────────
+// Shows a persistent in-app strip under the header indicating whether
+// background alarms are armed. Also controls the OS tray status notification.
+function renderAlarmStatusBanner() {
+  const area = document.getElementById('reconnect-area');
+  if (!area) return;
+
+  // Don't overwrite the vault reconnect banner — it's higher priority
+  if (area.querySelector('.reconnect-banner')) return;
+
+  // Remove any existing alarm status banner before re-rendering
+  area.querySelector('.alarm-status-banner')?.remove();
+
+  const perm = S.notifPermission;
+  const hasSW = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
+  const schedule = getTodaySchedule();
+  const now = new Date();
+
+  // Count future alarms for today
+  const futureAlarms = schedule.filter(item => {
+    try { return schedDate(item.time) > now; } catch { return false; }
+  });
+
+  // Read stored toggle preference (default: on)
+  const trayEnabled = LS.get('statusNotifEnabled') !== false;
+
+  const banner = document.createElement('div');
+  banner.className = 'alarm-status-banner';
+
+  let state, label, sublabel;
+
+  if (perm !== 'granted') {
+    state = 'noperm';
+    label = 'Notifications blocked';
+    sublabel = 'Tap ⚙ Settings → Enable Notifications to arm alarms';
+  } else if (!hasSW) {
+    state = 'inactive';
+    label = 'Alarm watcher starting…';
+    sublabel = 'Service worker initialising — reload if this persists';
+  } else if (!S.config?.schedule?.length) {
+    state = 'inactive';
+    label = 'No schedule loaded';
+    sublabel = 'Connect your vault to arm background alarms';
+  } else if (futureAlarms.length === 0) {
+    state = 'inactive';
+    label = 'All alarms done for today';
+    sublabel = 'No upcoming alarms remaining — check back tomorrow';
+  } else {
+    state = 'active';
+    const nextItem = futureAlarms[0];
+    const nextTime = nextItem.time;
+    label = `Alarms armed · ${futureAlarms.length} remaining today`;
+    sublabel = `Next: ${nextItem.activity} at ${nextTime}`;
+  }
+
+  banner.classList.add(state);
+  banner.innerHTML = `
+    <div class="asb-dot ${state}"></div>
+    <div class="asb-text ${state}">
+      ${label}
+      <div class="asb-sub">${sublabel}</div>
+    </div>
+    ${perm === 'granted' ? `
+    <div class="asb-toggle" id="asb-toggle" title="Toggle tray notification">
+      <span class="asb-toggle-label">Tray</span>
+      <div class="asb-toggle-sw ${trayEnabled ? 'on' : 'off'}" id="asb-sw"></div>
+    </div>` : ''}`;
+
+  area.appendChild(banner);
+
+  // Wire toggle
+  const toggle = banner.querySelector('#asb-toggle');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const nowEnabled = LS.get('statusNotifEnabled') !== false;
+      const next = !nowEnabled;
+      LS.set('statusNotifEnabled', next);
+      const sw = toggle.querySelector('#asb-sw');
+      sw.classList.toggle('on', next);
+      sw.classList.toggle('off', !next);
+      // Tell SW to show/hide tray notification
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: next });
+      }
+      showToast(next ? '🔔 Tray notification enabled' : '🔕 Tray notification disabled');
+    });
+  }
+}
+
 // ── RECONNECT BANNER ───────────────────────────────────────────────────────
 function showReconnectBanner() {
   const area = document.getElementById('reconnect-area');
@@ -5710,6 +5844,7 @@ function showReconnectBanner() {
     const ok = await reconnectVault();
     if (ok) {
       await loadFromVault();
+      area.innerHTML = ''; // clear reconnect banner so alarm banner can appear
       renderAll();
       showToast('✓ Vault reconnected');
     } else {
@@ -5844,11 +5979,18 @@ function showTodaySchedulePopup() {
       row.appendChild(nowPill);
     }
 
-    // Tap to log habit
+    // Tap to log habit — only for daily routine items
+    const isRoutineItem = item.blockType === 'routine' || (!item.blockType && (item.repeat||'daily') === 'daily');
     row.addEventListener('click', () => {
+      if (!isRoutineItem) return;
       const hi = detectHabit(item.activity);
       if (hi) { showManualModal(hi.key); ov.remove(); }
     });
+    if (isRoutineItem && detectHabit(item.activity)) {
+      row.style.cursor = 'pointer';
+    } else {
+      row.style.cursor = 'default';
+    }
 
     return row;
   }
@@ -5939,6 +6081,7 @@ function buildSkeleton() {
 function renderAll() {
   renderCountdown();
   renderHabitBars();
+  renderAlarmStatusBanner();
   // Keep SW alarm store in sync
   syncAlarmsToSW();
 }
@@ -6035,7 +6178,21 @@ async function boot() {
 
   if ('serviceWorker' in navigator) {
     const swReg = await navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(console.error);
-    // Once controller is available, start keep-alive and sync alarms
+
+    // Request Periodic Background Sync (Chrome Android installed PWA).
+    // When granted, the browser wakes the SW ~every minute even when fully closed.
+    async function requestPeriodicSync(reg) {
+      try {
+        if (!reg || !reg.periodicSync) return;
+        const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+        if (status.state === 'granted') {
+          await reg.periodicSync.register('check-alarms', { minInterval: 60 * 1000 });
+        }
+      } catch {}
+    }
+    if (swReg) requestPeriodicSync(swReg);
+
+    // Once controller is available, kick keep-alive and sync alarms
     const kickSW = () => {
       if (navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: 'START_KEEPALIVE' });
@@ -6047,6 +6204,13 @@ async function boot() {
     } else {
       navigator.serviceWorker.addEventListener('controllerchange', kickSW, { once: true });
     }
+
+    // Re-sync whenever user returns to the app so SW always has fresh alarm times
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && navigator.serviceWorker.controller) {
+        syncAlarmsToSW();
+      }
+    });
 
     // Listen for messages from SW (notification action clicks)
     navigator.serviceWorker.addEventListener('message', e => {
@@ -6143,10 +6307,82 @@ async function boot() {
   await restoreEventsHandle();
 
   if (Notification.permission==='default')
-    setTimeout(()=>Notification.requestPermission().then(p=>{ S.notifPermission=p; showBatteryBanner(); }), 2000);
-  else
+    setTimeout(()=>Notification.requestPermission().then(p=>{
+      S.notifPermission=p;
+      showBatteryBanner();
+      renderAlarmStatusBanner();
+      // Send tray-notif preference to SW now that permission is known
+      if (p === 'granted' && navigator.serviceWorker?.controller) {
+        const trayEnabled = LS.get('statusNotifEnabled') !== false;
+        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: trayEnabled });
+      }
+    }), 2000);
+  else {
     setTimeout(showBatteryBanner, 1000);
+    // Send tray-notif preference to SW on boot
+    setTimeout(() => {
+      if (S.notifPermission === 'granted' && navigator.serviceWorker?.controller) {
+        const trayEnabled = LS.get('statusNotifEnabled') !== false;
+        navigator.serviceWorker.controller.postMessage({ type: 'SET_STATUS_NOTIF', enabled: trayEnabled });
+      }
+    }, 1500);
+  }
 }
+
+// ── OFFLINE / ONLINE BANNER ────────────────────────────────────────────────
+(function initOfflineBanner() {
+  let _offlineBannerDismissed = false;
+
+  function showOfflineBanner() {
+    if (document.getElementById('offline-banner')) return;
+    _offlineBannerDismissed = false;
+    const el = document.createElement('div');
+    el.id = 'offline-banner';
+    el.innerHTML = `
+      <span class="ob-icon">📡</span>
+      <div class="ob-text">
+        <b>You're offline</b>
+        <span>App works locally — vault sync paused</span>
+      </div>
+      <button class="ob-close" title="Dismiss">✕</button>`;
+    document.body.appendChild(el);
+    el.querySelector('.ob-close').addEventListener('click', () => {
+      _offlineBannerDismissed = true;
+      removeOfflineBanner(true);
+    });
+  }
+
+  function removeOfflineBanner(animated) {
+    const el = document.getElementById('offline-banner');
+    if (!el) return;
+    if (animated) {
+      el.classList.add('dismissing');
+      setTimeout(() => el.remove(), 300);
+    } else {
+      el.remove();
+    }
+  }
+
+  function showBackOnlineBanner() {
+    removeOfflineBanner();
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.style.cssText += ';border-color:rgba(0,255,136,.4);color:var(--accent)';
+    t.textContent = '✓ Back online';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  window.addEventListener('offline', () => showOfflineBanner());
+
+  window.addEventListener('online', () => {
+    if (!_offlineBannerDismissed) showBackOnlineBanner();
+    else removeOfflineBanner();
+  });
+
+  // Show immediately if already offline on load
+  if (!navigator.onLine) setTimeout(showOfflineBanner, 800);
+})();
 
 boot();
 

@@ -1,24 +1,32 @@
-const CACHE_NAME = 'habit-tracker-v15';
+const CACHE_NAME = 'habit-tracker-v17';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
 
-// ── INSTALL / ACTIVATE / FETCH (unchanged) ──────────────────────────────────
+const STATUS_TAG = 'alarm-watcher'; // persistent status notification tag
+
+// ── INSTALL ──────────────────────────────────────────────────────────────────
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
   self.skipWaiting();
 });
 
+// ── ACTIVATE ─────────────────────────────────────────────────────────────────
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-  ));
-  self.clients.claim();
-  // Start keep-alive as soon as SW activates
-  startKeepAlive();
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+    await checkDueAlarms();
+    startKeepAlive();
+    await tryRegisterPeriodicSync();
+    await updateStatusNotification();
+  })());
 });
 
+// ── FETCH (cache-first) ───────────────────────────────────────────────────────
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   if (!e.request.url.startsWith(self.location.origin)) return;
+  rearmOnWakeup();
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -33,11 +41,37 @@ self.addEventListener('fetch', e => {
   );
 });
 
+// ── PERIODIC BACKGROUND SYNC ─────────────────────────────────────────────────
+self.addEventListener('periodicsync', e => {
+  if (e.tag === 'check-alarms') {
+    e.waitUntil((async () => {
+      await checkDueAlarms();
+      startKeepAlive();
+      await updateStatusNotification();
+    })());
+  }
+});
+
+async function tryRegisterPeriodicSync() {
+  try {
+    if (!self.registration.periodicSync) return;
+    await self.registration.periodicSync.register('check-alarms', { minInterval: 60 * 1000 });
+  } catch {}
+}
+
+// ── PUSH ─────────────────────────────────────────────────────────────────────
+self.addEventListener('push', e => {
+  e.waitUntil((async () => {
+    await checkDueAlarms();
+    startKeepAlive();
+    await updateStatusNotification();
+  })());
+});
+
 // ── INDEXEDDB HELPERS ────────────────────────────────────────────────────────
-// Stores the alarm schedule so it survives SW restarts
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('sw-alarms-v1', 1);
+    const r = indexedDB.open('sw-alarms-v2', 2);
     r.onupgradeneeded = e => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains('alarms')) db.createObjectStore('alarms', { keyPath: 'tag' });
@@ -98,41 +132,79 @@ async function dbClear(store) {
   });
 }
 
-// ── KEEP-ALIVE LOOP ──────────────────────────────────────────────────────────
-// Browser kills SWs ~30s after last event. We keep it alive by fetching our
-// own cached manifest every 20s — a real fetch event that resets the idle timer.
-// This is the only approach that works cross-browser without hacks.
+// ── STATUS NOTIFICATION ───────────────────────────────────────────────────────
+// A persistent notification that lives in the tray showing alarm status.
+// It is silent (no sound/vibration), non-interactive except for a "View" action.
+// Updated every time alarms change. Removed when no alarms remain.
+async function updateStatusNotification() {
+  // Check user preference — if disabled, clear and return
+  const pref = await dbGet('meta', 'statusNotifEnabled').catch(() => true);
+  if (pref === false) {
+    await clearStatusNotification();
+    return;
+  }
 
-const TICK_MS = 20000;
-let keepAliveTimer = null;
-let keepAliveRunning = false;
+  const alarms = await dbGetAll('alarms').catch(() => []);
+  const now = Date.now();
+  const upcoming = alarms
+    .filter(a => a.fireAt > now)
+    .sort((a, b) => a.fireAt - b.fireAt);
 
-function startKeepAlive() {
-  if (keepAliveRunning) return;
-  keepAliveRunning = true;
-  scheduleNextTick();
+  if (!upcoming.length) {
+    await clearStatusNotification();
+    return;
+  }
+
+  const next = upcoming[0];
+  const nextTime = new Date(next.fireAt);
+  const timeStr = nextTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const count = upcoming.length;
+
+  // Extract just the activity name from title like "⏰ 9:00 AM — Morning Run"
+  const actMatch = next.title.match(/— (.+)$/);
+  const actName = actMatch ? actMatch[1] : next.title;
+
+  const bodyLines = count === 1
+    ? `${actName} at ${timeStr}`
+    : `Next: ${actName} at ${timeStr} · ${count} alarm${count > 1 ? 's' : ''} today`;
+
+  try {
+    await self.registration.showNotification('⏰ Vault Dex · Alarms Active', {
+      body:    bodyLines,
+      tag:     STATUS_TAG,
+      icon:    './icon.svg',
+      badge:   './icon.svg',
+      silent:  true,          // no sound — purely informational
+      renotify: true,          // replace the existing one silently
+      requireInteraction: false, // can be auto-dismissed by OS if needed
+      data:    { type: 'status' },
+      actions: [{ action: 'open', title: 'Open App' }],
+    });
+  } catch (err) {
+    console.warn('[SW] status notification failed:', err);
+  }
 }
 
-function scheduleNextTick() {
-  if (keepAliveTimer) clearTimeout(keepAliveTimer);
-  keepAliveTimer = setTimeout(async () => {
-    keepAliveTimer = null;
-    await checkDueAlarms();
-    // Self-fetch to reset SW idle timer — fetches from cache, no network needed
-    try { await fetch('./manifest.json', { cache: 'no-store' }); } catch {}
-    scheduleNextTick(); // re-arm
-  }, TICK_MS);
+async function clearStatusNotification() {
+  try {
+    const notifications = await self.registration.getNotifications({ tag: STATUS_TAG });
+    notifications.forEach(n => n.close());
+  } catch {}
 }
 
-// ── CHECK DUE ALARMS ────────────────────────────────────────────────────────
+// ── CHECK DUE ALARMS ─────────────────────────────────────────────────────────
+const LATE_GRACE_MS = 10 * 60 * 1000;
+
 async function checkDueAlarms() {
   const now = Date.now();
   let alarms;
   try { alarms = await dbGetAll('alarms'); } catch { return; }
 
   for (const alarm of alarms) {
-    if (alarm.fireAt <= now) {
-      // Fire it
+    if (alarm.tag === STATUS_TAG) continue; // never treat status as a real alarm
+    const age = now - alarm.fireAt;
+
+    if (age >= 0 && age <= LATE_GRACE_MS) {
       try {
         await self.registration.showNotification(alarm.title, {
           body:               alarm.body,
@@ -141,31 +213,116 @@ async function checkDueAlarms() {
           badge:              './icon.svg',
           vibrate:            [200, 100, 200, 100, 200],
           requireInteraction: true,
+          silent:             false,
+          renotify:           false,
           data:               alarm.data || {},
           actions:            alarm.actions || [{ action: 'dismiss', title: 'Dismiss' }]
         });
       } catch (err) {
         console.warn('[SW] showNotification failed:', err);
       }
-      // Remove fired alarm
+      try { await dbDelete('alarms', alarm.tag); } catch {}
+
+    } else if (age > LATE_GRACE_MS) {
       try { await dbDelete('alarms', alarm.tag); } catch {}
     }
   }
+
+  await _updateNextWakeMeta();
 }
 
-// ── LEGACY SNOOZE TIMERS (fallback — kept alongside IndexedDB system) ────────
-// If the SW is alive these fire reliably. If SW is killed, IndexedDB picks it
-// back up when the SW wakes again. Belt-and-suspenders.
+// ── NEXT-WAKE TIMER ───────────────────────────────────────────────────────────
+let _nextWakeTimer = null;
+
+async function _updateNextWakeMeta() {
+  const alarms = await dbGetAll('alarms').catch(() => []);
+  const now = Date.now();
+  const next = alarms
+    .filter(a => a.fireAt > now && a.tag !== STATUS_TAG)
+    .sort((a, b) => a.fireAt - b.fireAt)[0];
+
+  if (next) {
+    await dbPut('meta', next.fireAt, 'nextWake').catch(() => {});
+    _armNextWakeTimer(next.fireAt - now);
+  } else {
+    await dbDelete('meta', 'nextWake').catch(() => {});
+  }
+}
+
+function _armNextWakeTimer(delay) {
+  if (_nextWakeTimer) clearTimeout(_nextWakeTimer);
+  _nextWakeTimer = setTimeout(async () => {
+    _nextWakeTimer = null;
+    await checkDueAlarms();
+    await updateStatusNotification();
+    startKeepAlive();
+  }, Math.max(0, delay));
+}
+
+async function rearmOnWakeup() {
+  if (_nextWakeTimer) return;
+  try {
+    const nextWake = await dbGet('meta', 'nextWake');
+    if (nextWake) {
+      const delay = nextWake - Date.now();
+      if (delay <= 0) {
+        await checkDueAlarms();
+        await updateStatusNotification();
+      } else {
+        _armNextWakeTimer(delay);
+      }
+    }
+  } catch {}
+}
+
+// ── KEEP-ALIVE LOOP ───────────────────────────────────────────────────────────
+const TICK_MS = 20000;
+let keepAliveTimer = null;
+let keepAliveRunning = false;
+
+function startKeepAlive() {
+  if (keepAliveRunning) return;
+  keepAliveRunning = true;
+  _scheduleTick();
+}
+
+function stopKeepAlive() {
+  keepAliveRunning = false;
+  if (keepAliveTimer) { clearTimeout(keepAliveTimer); keepAliveTimer = null; }
+}
+
+function _scheduleTick() {
+  if (keepAliveTimer) clearTimeout(keepAliveTimer);
+  keepAliveTimer = setTimeout(async () => {
+    keepAliveTimer = null;
+    if (!keepAliveRunning) return;
+
+    await checkDueAlarms();
+
+    const remaining = await dbGetAll('alarms').catch(() => []);
+    const hasReal = remaining.some(a => a.tag !== STATUS_TAG);
+    if (!hasReal) {
+      stopKeepAlive();
+      await clearStatusNotification();
+      return;
+    }
+
+    try { await fetch('./manifest.json', { cache: 'no-store' }); } catch {}
+    if (keepAliveRunning) _scheduleTick();
+  }, TICK_MS);
+}
+
+// ── SNOOZE TIMERS ─────────────────────────────────────────────────────────────
 const snoozeTimers = {};
 
 function setSnoozeTimer(tag, delay, title, body, actions) {
   if (snoozeTimers[tag]) { clearTimeout(snoozeTimers[tag]); delete snoozeTimers[tag]; }
   snoozeTimers[tag] = setTimeout(async () => {
     delete snoozeTimers[tag];
-    // Remove from IndexedDB so we don't double-fire
     try { await dbDelete('alarms', tag); } catch {}
     await self.registration.showNotification(title, {
-      body, tag, icon: './icon-192.png', badge: './icon-192.png',
+      body, tag,
+      icon: './icon.svg', badge: './icon.svg',
       vibrate: [200, 100, 200], requireInteraction: true,
       data: { tag },
       actions: actions || [
@@ -174,21 +331,19 @@ function setSnoozeTimer(tag, delay, title, body, actions) {
         { action: 'snooze10', title: '⏰ +10m' }
       ]
     });
+    await updateStatusNotification();
   }, delay);
 }
 
-
+// ── MESSAGE HANDLER ───────────────────────────────────────────────────────────
 self.addEventListener('message', e => {
   if (!e.data) return;
 
-  // Force immediate SW activation — called when user saves schedule changes
   if (e.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
     return;
   }
 
-  // App is open and sends the full alarm schedule for today
-  // Format: { type: 'SYNC_ALARMS', alarms: [ { tag, title, body, fireAt, actions, data }, ... ] }
   if (e.data.type === 'SYNC_ALARMS') {
     e.waitUntil((async () => {
       await dbClear('alarms');
@@ -198,118 +353,143 @@ self.addEventListener('message', e => {
           await dbPut('alarms', alarm);
         }
       }
-      // Kick off keep-alive loop if not already running
       startKeepAlive();
+      await _updateNextWakeMeta();
+      await tryRegisterPeriodicSync();
+      await updateStatusNotification();
     })());
     return;
   }
 
-  // Immediate alarm (app is open, alarm fires right now)
   if (e.data.type === 'SHOW_ALARM') {
     const { title, body, tag, actions, data } = e.data;
-    e.waitUntil(
-      self.registration.showNotification(title, {
-        body, tag, icon: './icon-192.png', badge: './icon-192.png',
+    e.waitUntil((async () => {
+      await self.registration.showNotification(title, {
+        body, tag,
+        icon: './icon.svg', badge: './icon.svg',
         vibrate: [200, 100, 200], requireInteraction: true,
         data: data || {},
         actions: actions || [{ action: 'dismiss', title: 'Dismiss' }]
-      })
-    );
-    return;
-  }
-
-  // Schedule a single alarm (e.g. snooze expiry) — stored in IndexedDB AND legacy timer
-  if (e.data.type === 'SCHEDULE_ALARM') {
-    const { title, body, tag, delay, actions, data } = e.data;
-    const fireAt = Date.now() + (delay || 0);
-    // Legacy timer (works while SW is alive)
-    setSnoozeTimer(tag, delay || 0, title, body, actions);
-    // IndexedDB (works if SW is killed and restarted)
-    e.waitUntil((async () => {
-      await dbPut('alarms', { tag, title, body, fireAt, actions, data: data || {} });
-      startKeepAlive();
+      });
+      await updateStatusNotification();
     })());
     return;
   }
 
-  // Cancel a scheduled alarm — both systems
-  if (e.data.type === 'CANCEL_ALARM') {
-    const { tag } = e.data;
-    if (snoozeTimers[tag]) { clearTimeout(snoozeTimers[tag]); delete snoozeTimers[tag]; }
-    e.waitUntil(dbDelete('alarms', tag));
+  if (e.data.type === 'SCHEDULE_ALARM') {
+    const { title, body, tag, delay, actions, data } = e.data;
+    const fireAt = Date.now() + (delay || 0);
+    setSnoozeTimer(tag, delay || 0, title, body, actions);
+    e.waitUntil((async () => {
+      await dbPut('alarms', { tag, title, body, fireAt, actions, data: data || {} });
+      startKeepAlive();
+      await _updateNextWakeMeta();
+      await updateStatusNotification();
+    })());
     return;
   }
 
-  // Start keep-alive loop explicitly (called on app open)
+  if (e.data.type === 'CANCEL_ALARM') {
+    const { tag } = e.data;
+    if (snoozeTimers[tag]) { clearTimeout(snoozeTimers[tag]); delete snoozeTimers[tag]; }
+    e.waitUntil((async () => {
+      await dbDelete('alarms', tag);
+      await updateStatusNotification();
+    })());
+    return;
+  }
+
   if (e.data.type === 'START_KEEPALIVE') {
     startKeepAlive();
+    e.waitUntil((async () => {
+      await rearmOnWakeup();
+      await tryRegisterPeriodicSync();
+      await updateStatusNotification();
+    })());
+    return;
+  }
+
+  // Toggle the persistent status notification on/off
+  if (e.data.type === 'SET_STATUS_NOTIF') {
+    const enabled = e.data.enabled !== false;
+    e.waitUntil((async () => {
+      await dbPut('meta', enabled, 'statusNotifEnabled');
+      if (enabled) await updateStatusNotification();
+      else await clearStatusNotification();
+    })());
     return;
   }
 });
 
-// ── NOTIFICATION CLICK ───────────────────────────────────────────────────────
+// ── NOTIFICATION CLICK ────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const action = e.action;
   const tag    = e.notification.tag || '';
+  const data   = e.notification.data || {};
 
-  // Snooze: "snooze:idx:mins"
-  if (action.startsWith('snooze:')) {
-    const parts = action.split(':');
-    const mins  = parseInt(parts[2]) || 5;
-    e.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-        const msg = { type: 'SNOOZED', tag, mins };
-        if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
-        else self.clients.openWindow('./index.html');
-      })
-    );
-    return;
-  }
-
-  // Legacy snooze buttons
-  if (action === 'snooze5' || action === 'snooze10') {
-    const mins = action === 'snooze5' ? 5 : 10;
-    e.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-        if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'SNOOZED', tag, mins }); }
-        else self.clients.openWindow('./index.html');
-      })
-    );
-    return;
-  }
-
-  // Habit action from notification button: "habit:key:value"
-  if (action.startsWith('habit:')) {
-    const parts    = action.split(':');
-    const habitKey = parts[1];
-    const habitVal = parseInt(parts[2]);
-    e.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-        const msg = { type: 'HABIT_ACTION', habitKey, habitVal };
-        if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
-        else self.clients.openWindow('./index.html?ha=' + encodeURIComponent(JSON.stringify({ habitKey, habitVal })));
-      })
-    );
-    return;
-  }
-
-  // "done" action
-  if (action === 'done') {
-    e.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-        if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'NOTIFICATION_CLICK', tag }); }
-        else self.clients.openWindow('./index.html');
-      })
-    );
-    return;
-  }
-
-  // Default tap / dismiss
-  e.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+  e.waitUntil((async () => {
+    // Status notification tapped / "Open App" action
+    if (tag === STATUS_TAG || data.type === 'status' || action === 'open') {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       if (clients.length) clients[0].focus();
-      else self.clients.openWindow('./index.html');
-    })
-  );
+      else await self.clients.openWindow('./index.html');
+      return;
+    }
+
+    // Snooze: "snooze:idx:mins"
+    if (action.startsWith('snooze:')) {
+      const parts = action.split(':');
+      const mins  = parseInt(parts[2]) || 5;
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const msg = { type: 'SNOOZED', tag, mins };
+      if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
+      else await self.clients.openWindow('./index.html');
+      return;
+    }
+
+    // Legacy snooze
+    if (action === 'snooze5' || action === 'snooze10') {
+      const mins = action === 'snooze5' ? 5 : 10;
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'SNOOZED', tag, mins }); }
+      else await self.clients.openWindow('./index.html');
+      return;
+    }
+
+    // Habit action: "habit:key:value"
+    if (action.startsWith('habit:')) {
+      const parts    = action.split(':');
+      const habitKey = parts[1];
+      const habitVal = parseInt(parts[2]);
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const msg = { type: 'HABIT_ACTION', habitKey, habitVal };
+      if (clients.length) { clients[0].focus(); clients[0].postMessage(msg); }
+      else await self.clients.openWindow('./index.html?ha=' + encodeURIComponent(JSON.stringify({ habitKey, habitVal })));
+      return;
+    }
+
+    // Done
+    if (action === 'done') {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (clients.length) { clients[0].focus(); clients[0].postMessage({ type: 'NOTIFICATION_CLICK', tag }); }
+      else await self.clients.openWindow('./index.html');
+      return;
+    }
+
+    // Default tap
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (clients.length) clients[0].focus();
+    else await self.clients.openWindow('./index.html');
+  })());
+});
+
+// ── NOTIFICATION CLOSE ────────────────────────────────────────────────────────
+self.addEventListener('notificationclose', e => {
+  // If the user manually swipes away the status notification, respect it
+  // for this session but don't permanently disable it
+  if (e.notification.tag === STATUS_TAG) {
+    // Re-show it on the next alarm check — the user just cleared the tray
+    // We don't permanently disable because that would break the "always visible" goal
+  }
 });
