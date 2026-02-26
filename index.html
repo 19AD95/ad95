@@ -5543,7 +5543,7 @@ function showSettings() {
       </div>
       <div id="s-update-bar" style="margin-top:10px;display:none;flex-direction:column;gap:8px">
         <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);line-height:1.6" id="s-update-msg"></div>
-        <button class="btn btn-green" id="s-do-update" style="width:100%">⬇ Download Update</button>
+        <button class="btn btn-green" id="s-do-update" style="width:100%">⬆ Apply Update</button>
       </div>
     </div>
 
@@ -5616,9 +5616,24 @@ function showSettings() {
     // On first load it's null — we fetch the current SHA and store it as baseline.
     const storedSha = LS.get('appFileSha');
 
-    verLabel.textContent = 'checking for updates…';
+    verLabel.textContent = 'checking…';
     try {
-      // GitHub Contents API returns the current SHA of the file without downloading it
+      // Check if a new SW is already waiting (installed but not yet active)
+      const swReg = await navigator.serviceWorker?.getRegistration();
+      if (swReg?.waiting) {
+        verLabel.textContent = 'update ready to install';
+        pill.style.display = 'inline-flex';
+        bar.style.display  = 'flex';
+        msg.textContent = 'A new version is downloaded and ready. Tap below to install it now.';
+        doUpdate.addEventListener('click', () => {
+          doUpdate.textContent = 'Installing…';
+          swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          // controllerchange listener in boot() will reload the page
+        });
+        return;
+      }
+
+      // Otherwise check GitHub to see if there's a newer version than what's running
       const apiRes = await fetch(GITHUB_API_URL, {
         cache: 'no-store',
         headers: { 'Accept': 'application/vnd.github.v3+json' }
@@ -5628,69 +5643,70 @@ function showSettings() {
       const remoteSha = meta.sha;
 
       if (!storedSha) {
-        // First time — store current SHA as baseline, user is up to date
         LS.set('appFileSha', remoteSha);
         verLabel.textContent = 'up to date';
         return;
       }
 
       if (remoteSha !== storedSha) {
-        // File changed on GitHub since last update
-        verLabel.textContent = 'update available';
-        pill.style.display = 'inline-flex';
-        bar.style.display  = 'flex';
-        // Get commit message for context
-        let commitNote = '';
-        try {
-          const commitRes = await fetch(
-            `https://api.github.com/repos/19AD95/ad95/commits?path=index.html&per_page=1`,
-            { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
-          );
-          if (commitRes.ok) {
-            const commits = await commitRes.json();
-            commitNote = commits[0]?.commit?.message ? `"${commits[0].commit.message}"` : '';
-          }
-        } catch {}
-        msg.textContent = commitNote
-          ? `Latest change: ${commitNote}. Tap below to download the updated file.`
-          : 'A newer version of Vault Dex is available. Tap below to download it.';
-
-        doUpdate.addEventListener('click', async () => {
-          doUpdate.textContent = '⏳ Downloading…';
-          doUpdate.disabled = true;
-          try {
-            const rawRes = await fetch(GITHUB_RAW_URL, { cache: 'no-store' });
-            if (!rawRes.ok) throw new Error('Download failed');
-            const text = await rawRes.text();
-            const blob = new Blob([text], { type: 'text/html' });
-            const url  = URL.createObjectURL(blob);
-            const a    = document.createElement('a');
-            a.href     = url;
-            a.download = 'index.html';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            // Record new SHA so update badge clears after download
-            LS.set('appFileSha', remoteSha);
-            doUpdate.textContent = '✓ Downloaded';
-            pill.style.display = 'none';
-            bar.style.display  = 'none';
-            verLabel.textContent = 'up to date — reload to apply';
-            showToast('✓ index.html downloaded — push to GitHub to deploy');
-          } catch(e) {
-            doUpdate.textContent = '⬇ Download Update';
-            doUpdate.disabled = false;
-            showToast('Download failed — check your connection');
-          }
-        });
+        // New version on GitHub — browser will pick it up on next SW update check
+        // Force-trigger an update check now
+        verLabel.textContent = 'update available — checking…';
+        try { await swReg?.update(); } catch {}
+        // After update(), if sw.js changed the browser will download new SW
+        // Give it a moment then re-check for waiting SW
+        await new Promise(r => setTimeout(r, 2000));
+        const reg2 = await navigator.serviceWorker?.getRegistration();
+        if (reg2?.waiting) {
+          verLabel.textContent = 'update ready to install';
+          pill.style.display = 'inline-flex';
+          bar.style.display  = 'flex';
+          msg.textContent = 'New version downloaded. Tap below to install.';
+          doUpdate.addEventListener('click', () => {
+            doUpdate.textContent = 'Installing…';
+            reg2.waiting.postMessage({ type: 'SKIP_WAITING' });
+          });
+        } else {
+          verLabel.textContent = 'update available — reopen app to install';
+          pill.style.display = 'inline-flex';
+        }
       } else {
         verLabel.textContent = 'up to date';
+        pill.style.display = 'none';
       }
     } catch(e) {
-      verLabel.textContent = storedSha ? 'offline — last check unavailable' : 'could not reach GitHub';
+      verLabel.textContent = 'could not check — offline?';
     }
   })();
+}
+
+// ── UPDATE BANNER ────────────────────────────────────────────────────────────
+// waitingSW: the ServiceWorker instance in "waiting" state (has new code ready)
+function showUpdateBanner(waitingSW) {
+  if (document.getElementById('update-banner')) return; // already showing
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = [
+    'position:fixed;bottom:80px;left:50%;transform:translateX(-50%)',
+    'background:var(--accent);color:var(--bg)',
+    'font-family:var(--font-mono);font-size:12px;font-weight:700',
+    'padding:10px 18px;border-radius:20px',
+    'display:flex;align-items:center;gap:10px',
+    'box-shadow:0 4px 20px rgba(0,255,136,.4)',
+    'z-index:9999;white-space:nowrap'
+  ].join(';');
+  banner.innerHTML = '⬆ Update ready  <button style="background:var(--bg);color:var(--accent);border:none;border-radius:10px;padding:4px 10px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">Update & Reload</button>';
+  banner.querySelector('button').addEventListener('click', () => {
+    banner.querySelector('button').textContent = 'Updating…';
+    if (waitingSW) {
+      // Tell the waiting SW to activate — it will fetch all fresh files and take over.
+      // The controllerchange listener in boot() calls location.reload(true) when done.
+      waitingSW.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      location.reload(true);
+    }
+  });
+  document.body.appendChild(banner);
 }
 
 // ── INSTALL GUIDE ──────────────────────────────────────────────────────────
@@ -6289,7 +6305,6 @@ async function boot() {
           S.snooze[schedIdx] = until;
           renderCountdown();
           showToast(`Snoozed ${mins}m`);
-          // Schedule a notification to fire when snooze expires (if SW available)
           if (S.notifPermission === 'granted' && navigator.serviceWorker.controller && S.config?.schedule[schedIdx]) {
             const item = S.config.schedule[schedIdx];
             const hi = detectHabit(item.activity);
@@ -6315,6 +6330,36 @@ async function boot() {
       } else if (e.data.type === 'NOTIFICATION_CLICK') {
         // focus app, handled by SW openWindow already
       }
+    });
+
+    // ── Native SW update detection ────────────────────────────────────────────
+    // When a new sw.js is deployed, the browser downloads it and holds it as
+    // a "waiting" SW. We detect this and show the update banner.
+    function onWaitingSW(reg) {
+      if (reg.waiting) showUpdateBanner(reg.waiting);
+    }
+
+    // Check immediately (page might have loaded with a waiting SW already)
+    if (swReg) {
+      onWaitingSW(swReg);
+      // Also fires when a new SW finishes installing while app is open
+      swReg.addEventListener('updatefound', () => {
+        const newSW = swReg.installing;
+        if (!newSW) return;
+        newSW.addEventListener('statechange', () => {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            // New SW waiting — real update available
+            onWaitingSW(swReg);
+          }
+        });
+      });
+      // Poll for updates every 60s while app is open (browser only auto-checks on navigation)
+      setInterval(() => swReg.update().catch(() => {}), 60000);
+    }
+
+    // When controller changes (new SW activated), reload to run new code
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      location.reload(true);
     });
   }
 
