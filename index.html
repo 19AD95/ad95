@@ -4922,56 +4922,39 @@ async function loadAllLogs() {
   _logsLoading = true;
   _setLogsStatus('Loading…');
 
-  // ── Clear IDB cache so archive always reads fresh from vault ──
-  await IDBLogs.clearAll();
-
   const entries = [];
 
-  // ── 1. Load from IDB (works on all platforms) ──
-  try {
-    const idbLogs = await IDBLogs.getAll();
-    for (const log of idbLogs) {
-      entries.push({
-        filename: log.filename,
-        path: log.path,
-        handle: null,       // no file handle — IDB only
-        idbId: log.id,      // IDB key for edits/deletes
-        preview: log.preview,
-        tags: log.tags || [],
-        dateLabel: log.dateLabel || _filenameToLabel(log.filename),
-        _fullText: log.content,
-        loaded: true,
-        ts: log.ts || 0,
-      });
-    }
-  } catch(e) { console.warn('IDB log load failed:', e); }
-
-  // ── 2. Load from folder (desktop) — merge, dedup by filename ──
+  // ── 1. Folder is source of truth — always read directly from disk when available ──
   if (S.logOutputDirHandle) {
     try {
       const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
-        const folderEntries = [];
-        await _scanLogDir(S.logOutputDirHandle, '', folderEntries);
-        // Build set of filenames that actually exist on disk
-        const folderFilenames = new Set(folderEntries.map(e => e.filename));
-
-        // ── Reconcile: remove IDB entries whose files no longer exist on disk ──
-        const toDelete = entries.filter(e => e.idbId && !folderFilenames.has(e.filename));
-        for (const stale of toDelete) {
-          try { await IDBLogs.delete(stale.idbId); } catch {}
-        }
-        // Remove stale entries from in-memory list
-        const staleIds = new Set(toDelete.map(e => e.idbId));
-        entries.splice(0, entries.length, ...entries.filter(e => !staleIds.has(e.idbId)));
-
-        // Add folder entries that aren't already in IDB (dedup by filename)
-        const idbFilenames = new Set(entries.map(e => e.filename));
-        for (const fe of folderEntries) {
-          if (!idbFilenames.has(fe.filename)) entries.push(fe);
-        }
+        await _scanLogDir(S.logOutputDirHandle, '', entries);
+        // Clear IDB entirely — folder is authoritative, no stale cache
+        await IDBLogs.clearAll();
       }
     } catch(e) { console.warn('Folder log scan failed:', e.message); }
+  }
+
+  // ── 2. No folder — fall back to IDB only ──
+  if (!entries.length) {
+    try {
+      const idbLogs = await IDBLogs.getAll();
+      for (const log of idbLogs) {
+        entries.push({
+          filename: log.filename,
+          path: log.path,
+          handle: null,
+          idbId: log.id,
+          preview: log.preview,
+          tags: log.tags || [],
+          dateLabel: log.dateLabel || _filenameToLabel(log.filename),
+          _fullText: log.content,
+          loaded: true,
+          ts: log.ts || 0,
+        });
+      }
+    } catch(e) { console.warn('IDB log load failed:', e); }
   }
 
   if (!entries.length) {
@@ -5114,7 +5097,8 @@ function _logsVirtualRender(force) {
 }
 
 async function _loadLogPreview(log) {
-  if (log.loaded) return;
+  // Always re-read from disk if we have a file handle — never serve stale cache
+  if (log.loaded && !log.handle) return;
   log.loaded = true;
   try {
     const file = await log.handle.getFile();
@@ -5135,8 +5119,12 @@ async function _loadLogPreview(log) {
         else if (line.trim() !== '' && !/^\s/.test(line)) break; // non-indented line ends block
       }
     }
-    // Extract timestamp from filename for display
+    // Extract timestamp from filename for display + sorting
     log.dateLabel = _filenameToLabel(log.filename);
+    if (!log.ts) {
+      const m = log.filename.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+      if (m) log.ts = new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime();
+    }
   } catch { log.preview = log.filename; }
 }
 
