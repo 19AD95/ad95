@@ -552,6 +552,17 @@ const IDBLogs = {
       });
     } catch(e) { console.warn('IDBLogs.delete failed:', e); return false; }
   },
+  async clearAll() {
+    try {
+      const d = await IDB.open();
+      return new Promise((res,rej) => {
+        const tx = d.transaction('logs','readwrite');
+        tx.objectStore('logs').clear();
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch(e) { console.warn('IDBLogs.clearAll failed:', e); return false; }
+  },
 };
 
 let _todayStrCache = '', _todayStrDate = -1;
@@ -4911,6 +4922,9 @@ async function loadAllLogs() {
   _logsLoading = true;
   _setLogsStatus('Loading…');
 
+  // ── Clear IDB cache so archive always reads fresh from vault ──
+  await IDBLogs.clearAll();
+
   const entries = [];
 
   // ── 1. Load from IDB (works on all platforms) ──
@@ -5257,11 +5271,40 @@ function _openLogEditor(log) {
   // Rebuild into "log text #tag1 #tag2" format for the textarea
   const initialValue = currentLog + (currentTags.length ? ' ' + currentTags.map(t => '#' + t).join(' ') : '');
 
+  // ── Extract current date/time from frontmatter, fallback to log.ts ──
+  const dateMatch = rawText.match(/^date:\s*(\d{4}-\d{2}-\d{2})/m);
+  const timeMatch = rawText.match(/^time:\s*(.+)/m);
+  const logDate = log.ts ? new Date(log.ts) : new Date();
+  const initDateVal = dateMatch ? dateMatch[1] : fmtDateYMD(logDate);
+  let initTimeVal = String(logDate.getHours()).padStart(2,'0') + ':' + String(logDate.getMinutes()).padStart(2,'0');
+  if (timeMatch) {
+    const tp = timeMatch[1].trim();
+    const nums = tp.match(/(\d+):(\d+)/);
+    if (nums) {
+      let hh = parseInt(nums[1]), mm = parseInt(nums[2]);
+      if (/pm/i.test(tp) && hh !== 12) hh += 12;
+      if (/am/i.test(tp) && hh === 12) hh = 0;
+      initTimeVal = String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+    }
+  }
+
   ov.innerHTML = `<div class="modal" style="max-height:92dvh;overflow-y:auto">
     <div class="modal-handle"></div>
     <div style="font-size:14px;font-weight:800;margin-bottom:4px">✎ Edit Log</div>
     <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);margin-bottom:4px">${log.path}</div>
     <div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-bottom:12px">Use #hashtags to tag your entry</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px">Date</label>
+        <input type="date" id="le-date" value="${initDateVal}"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s;cursor:pointer"/>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-family:var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px">Time</label>
+        <input type="time" id="le-time" value="${initTimeVal}"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s;cursor:pointer"/>
+      </div>
+    </div>
     <textarea id="le-body" placeholder="Your log text… #tag1 #tag2"
       style="width:100%;min-height:140px;resize:vertical;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font-mono);font-size:14px;outline:none;line-height:1.6;margin-bottom:10px;transition:border-color .15s"></textarea>
     <div id="le-tag-preview" style="min-height:22px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px"></div>
@@ -5298,6 +5341,29 @@ function _openLogEditor(log) {
     btn.disabled = true; btn.textContent = 'Saving…';
 
     try {
+      // ── Read new date/time from inputs ──
+      const newDateVal = ov.querySelector('#le-date').value; // YYYY-MM-DD
+      const newTimeVal = ov.querySelector('#le-time').value; // HH:MM (24h)
+      let newTs = log.ts;
+      let newDateStr = initDateVal;
+      let newTimeStr = null;
+      if (newDateVal) {
+        newDateStr = newDateVal;
+        const [y,mo,d] = newDateVal.split('-').map(Number);
+        let hh = logDate.getHours(), mm = logDate.getMinutes();
+        if (newTimeVal) {
+          const tp = newTimeVal.split(':').map(Number);
+          hh = tp[0]; mm = tp[1];
+        }
+        newTs = new Date(y, mo-1, d, hh, mm, 0, 0).getTime();
+      }
+      if (newTimeVal) {
+        const [hh, mm] = newTimeVal.split(':').map(Number);
+        const ap = hh >= 12 ? 'pm' : 'am';
+        const h12 = hh % 12 || 12;
+        newTimeStr = String(h12).padStart(2,'0') + ':' + String(mm).padStart(2,'0') + ' ' + ap;
+      }
+
       // ── Parse new log text + tags from user input ──
       const { tags: newTags, cleaned: newLogText } = extractTagsFromText(inputText);
       const sanitizedLog = sanitizeForYAML(newLogText);
@@ -5309,8 +5375,18 @@ function _openLogEditor(log) {
       const fmMatch = normRaw.match(/^---\n([\s\S]*?)\n---/);
       let newFullText;
       if (fmMatch) {
-        // Parse existing YAML lines, drop old log/tags, reinsert
+        // Parse existing YAML lines, update date/time/log/tags
         let yamlLines = fmMatch[1].split('\n');
+        // Update or insert date
+        const di = yamlLines.findIndex(l => l.startsWith('date:'));
+        if (di !== -1) yamlLines[di] = `date: ${newDateStr}`;
+        else yamlLines.unshift(`date: ${newDateStr}`);
+        // Update or insert time
+        if (newTimeStr) {
+          const ti2 = yamlLines.findIndex(l => l.startsWith('time:'));
+          if (ti2 !== -1) yamlLines[ti2] = `time: ${newTimeStr}`;
+          else yamlLines.splice(1, 0, `time: ${newTimeStr}`);
+        }
         // Remove old log: line
         yamlLines = yamlLines.filter(l => !l.startsWith('log:'));
         // Remove old tags block
@@ -5329,7 +5405,8 @@ function _openLogEditor(log) {
         newFullText = '---\n' + yamlLines.join('\n') + '\n---' + bodyAfterFm;
       } else {
         // No frontmatter — prepend one
-        newFullText = `---\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n${normRaw}`;
+        const timeLineStr = newTimeStr ? `\ntime: ${newTimeStr}` : '';
+        newFullText = `---\ndate: ${newDateStr}${timeLineStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n${normRaw}`;
       }
 
       // ── Write: IDB first, then folder ──
@@ -5341,6 +5418,8 @@ function _openLogEditor(log) {
             existing.content = newFullText;
             existing.preview = sanitizedLog.slice(0, 120);
             existing.tags = finalTags;
+            existing.ts = newTs;
+            existing.dateLabel = _filenameToLabel(existing.filename);
             await IDBLogs.save(existing);
           }
         } catch(e) { console.warn('IDB log update failed:', e); }
@@ -5380,6 +5459,14 @@ function _openLogEditor(log) {
 
       // ── Update in-memory cache ──
       log._fullText = newFullText;
+      log.ts = newTs;
+      if (newDateVal) {
+        const [y,mo,d] = newDateVal.split('-').map(Number);
+        let hh = 0, mm = 0;
+        if (newTimeVal) { const tp = newTimeVal.split(':').map(Number); hh = tp[0]; mm = tp[1]; }
+        const dispDate = new Date(y, mo-1, d, hh, mm);
+        log.dateLabel = dispDate.toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      }
       log.loaded = false;
       await _loadLogPreview(log);
       const idx = _filteredLogs.indexOf(log);
