@@ -4870,7 +4870,7 @@ function showLogsPopup() {
           <option value="week">This Week</option>
           <option value="month">This Month</option>
           <option value="year">This Year</option>
-          <option value="all">All Time</option>
+          <option value="all" selected>All Time</option>
         </select>
       </div>
       <div style="flex:1;min-height:0;position:relative">
@@ -4888,6 +4888,8 @@ function showLogsPopup() {
   // Reset log state for fresh popup render
   _logsTabMounted = false;
   _logsLoading = false;
+  _logsSearchQ = '';
+  _logsDateFilter = 'all';
   _allLogs = [];
   _filteredLogs = [];
   _logsNodes = {};
@@ -4978,18 +4980,18 @@ function _logsApplyFilter() {
 
   let base = _allLogs;
 
-  // Date filter
+  // Date filter — use ts (from frontmatter) for accuracy
   if (_logsDateFilter !== 'all') {
+    const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+    const weekStartMs = weekStart.getTime();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const yearStart  = new Date(now.getFullYear(), 0, 1).getTime();
     base = base.filter(l => {
-      const fn = l.filename;
-      if (_logsDateFilter === 'today') return fn.includes(todayStr2);
-      if (_logsDateFilter === 'week') {
-        // extract YYYYMMDD from filename
-        const m = fn.match(/(\d{8})/); if (!m) return false;
-        return parseInt(m[1]) >= weekStartNum;
-      }
-      if (_logsDateFilter === 'month') return fn.includes(monthStr) || fn.startsWith(yearStr + '/' + now.toISOString().slice(5,7));
-      if (_logsDateFilter === 'year')  return fn.includes(yearStr) || l.path.startsWith(yearStr + '/');
+      const t = l.ts || 0;
+      if (_logsDateFilter === 'today') return t >= todayStart.getTime();
+      if (_logsDateFilter === 'week')  return t >= weekStartMs;
+      if (_logsDateFilter === 'month') return t >= monthStart;
+      if (_logsDateFilter === 'year')  return t >= yearStart;
       return true;
     });
   }
