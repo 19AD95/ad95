@@ -4923,30 +4923,33 @@ async function loadAllLogs() {
   _logsLoading = true;
   _setLogsStatus('Loading…');
 
-  const entries = [];
+  try {
+    const entries = [];
 
-  // ── Always read directly from folder — no IDB ──
-  if (S.logOutputDirHandle) {
-    try {
-      const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        await _scanLogDir(S.logOutputDirHandle, '', entries);
-      }
-    } catch(e) { console.warn('Folder log scan failed:', e.message); }
+    // ── Always read directly from folder — no IDB ──
+    if (S.logOutputDirHandle) {
+      try {
+        const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          await _scanLogDir(S.logOutputDirHandle, '', entries);
+        }
+      } catch(e) { console.warn('Folder log scan failed:', e.message); }
+    }
+
+    if (!entries.length) {
+      _logsSetEmpty('No logs yet.<br><small style="color:var(--muted);font-size:11px">Connect your vault folder in Settings to view logs.</small>');
+      return;
+    }
+
+    // Pre-load all previews so we have ts/dateLabel for sorting
+    await Promise.all(entries.map(e => _loadLogPreview(e).catch(() => {})));
+
+    entries.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
+    _allLogs = entries;
+    _logsApplyFilter();
+  } finally {
+    _logsLoading = false;
   }
-
-  if (!entries.length) {
-    _logsSetEmpty('No logs yet.<br><small style="color:var(--muted);font-size:11px">Connect your vault folder in Settings to view logs.</small>');
-    _logsLoading = false; return;
-  }
-
-  // Pre-load all previews so we have ts/dateLabel for sorting
-  await Promise.all(entries.map(e => _loadLogPreview(e)));
-
-  entries.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
-  _allLogs = entries;
-  _logsApplyFilter();
-  _logsLoading = false;
 }
 
 // Recursively scan a directory for .md files
