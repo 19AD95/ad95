@@ -4847,7 +4847,7 @@ let _logsSpacerEl = null;
 let _logsRenderedRange = { start: 0, end: 0 };
 let _logsNodes = {};    // index → DOM node (pooled)
 
-let _logsDateFilter = 'today'; // 'today' | 'week' | 'month' | 'year' | 'all'
+let _logsDateFilter = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all'
 
 // ── LOGS POPUP ───────────────────────────────────────────────────────────────
 function showLogsPopup() {
@@ -4866,11 +4866,11 @@ function showLogsPopup() {
       <div class="logs-toolbar" style="margin-bottom:10px">
         <input class="logs-search" id="lp-search" type="search" placeholder="Search logs…" autocomplete="off"/>
         <select id="lp-date-filter" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-family:var(--font-mono);font-size:11px;outline:none;cursor:pointer;flex-shrink:0">
-          <option value="today">Today</option>
+          <option value="today" selected>Today</option>
           <option value="week">This Week</option>
           <option value="month">This Month</option>
           <option value="year">This Year</option>
-          <option value="all" selected>All Time</option>
+          <option value="all">All Time</option>
         </select>
       </div>
       <div style="flex:1;min-height:0;position:relative">
@@ -4889,7 +4889,7 @@ function showLogsPopup() {
   _logsTabMounted = false;
   _logsLoading = false;
   _logsSearchQ = '';
-  _logsDateFilter = 'all';
+  _logsDateFilter = 'today';
   _allLogs = [];
   _filteredLogs = [];
   _logsNodes = {};

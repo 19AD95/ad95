@@ -1,4 +1,4 @@
-const CACHE_NAME = 'habit-tracker-v22';
+const CACHE_NAME = 'habit-tracker-v23';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon.svg'];
 
 // ── INSTALL ──────────────────────────────────────────────────────────────────
@@ -19,23 +19,42 @@ self.addEventListener('activate', e => {
   })());
 });
 
-// ── FETCH (cache-first) ───────────────────────────────────────────────────────
+// ── FETCH ────────────────────────────────────────────────────────────────────
+// index.html → network-first (always fresh); everything else → cache-first
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   if (!e.request.url.startsWith(self.location.origin)) return;
   rearmOnWakeup();
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
+
+  const url = new URL(e.request.url);
+  const isHTML = url.pathname.endsWith('/') || url.pathname.endsWith('index.html') || url.pathname === self.registration.scope.replace(self.location.origin, '');
+
+  if (isHTML) {
+    // Network-first: always try to fetch fresh, fall back to cache if offline
+    e.respondWith(
+      fetch(e.request).then(response => {
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
         }
         return response;
-      }).catch(() => cached);
-    })
-  );
+      }).catch(() => caches.match(e.request))
+    );
+  } else {
+    // Cache-first: serve from cache, update in background
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          }
+          return response;
+        }).catch(() => cached);
+      })
+    );
+  }
 });
 
 // ── PERIODIC BACKGROUND SYNC ─────────────────────────────────────────────────
