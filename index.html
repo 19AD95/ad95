@@ -1234,14 +1234,21 @@ function getCurNext() {
   return {cur, next};
 }
 
-// Returns true if we are currently INSIDE task i (start <= now < start+duration)
+// Returns true if we are currently INSIDE task i (start <= now < end)
+// End = next task's start time if one exists, otherwise start + duration
 function isInsideTask(sc, i) {
   if (i < 0 || i >= sc.length) return false;
   const start = schedDate(sc[i].time);
-  const dur   = (sc[i].duration || 30) * 60000;
-  const end   = new Date(start.getTime() + dur);
   const now   = new Date();
-  return now >= start && now < end;
+  if (now < start) return false;
+  // If there's a next task, the current task runs until it begins
+  if (i + 1 < sc.length) {
+    const nextStart = schedDate(sc[i + 1].time);
+    return now < nextStart;
+  }
+  // Last task: use explicit duration
+  const dur = (sc[i].duration || 30) * 60000;
+  return now < new Date(start.getTime() + dur);
 }
 
 // Returns true if we are past the end of the last task for today
@@ -1457,18 +1464,21 @@ function renderCountdown() {
   if (isInsideTask(todaySched, cur)) {
     const ci = todaySched[cur];
     const taskStart = schedDate(ci.time);
-    const taskEnd   = new Date(taskStart.getTime() + (ci.duration || 30) * 60000);
-    const rem       = taskEnd - Date.now();
 
     if (next === -1) {
-      // Last task — show task + time remaining in it
+      // Last task — use explicit duration to determine end
+      const taskEnd = new Date(taskStart.getTime() + (ci.duration || 30) * 60000);
+      const rem     = taskEnd - Date.now();
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
         <div class="cm"><span class="cl">Remaining Time:</span><span class="ct active${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
         <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${Math.max(0,Math.min(100,100-(rem/((ci.duration||30)*60000))*100))}%"></div></div></div>`;
     } else {
-      const ni = todaySched[next];
-      const span = schedDate(ni.time) - taskStart;
-      const pct  = Math.max(0, Math.min(100, 100 - (rem / ((ci.duration||30)*60000) * 100)));
+      // Task runs until the next task begins — use next task start as the end boundary
+      const ni      = todaySched[next];
+      const taskEnd = schedDate(ni.time);
+      const span    = taskEnd - taskStart;
+      const rem     = taskEnd - Date.now();
+      const pct     = Math.max(0, Math.min(100, 100 - (rem / span * 100)));
       left.innerHTML = `<div class="cw"><div class="ca" style="font-size:14px">${ci.activity}</div>
         <div class="cm"><span class="cl">Remaining Time:</span><span class="ct active${rem<60000?' urgent':''}" id="main-timer">${fmtMs(rem)}</span></div>
         <div class="pb-wrap"><div class="pb-fill" id="prog-bar" style="width:${pct}%"></div></div>
