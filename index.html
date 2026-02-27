@@ -273,6 +273,9 @@
   .log-item-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
   .log-item-tag{font-size:10px;font-family:var(--font-mono);color:var(--accent);background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);border-radius:10px;padding:1px 7px}
   .logs-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px;line-height:1.8;text-align:center;padding:20px}
+  @keyframes logShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .log-item-skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--border) 50%,var(--bg3) 75%);background-size:200% 100%;animation:logShimmer 1.4s ease infinite;border-radius:4px;height:10px;}
+  .log-item.loading{opacity:.7}
   .logs-status{font-size:11px;font-family:var(--font-mono);color:var(--muted);text-align:right;margin-top:6px;flex-shrink:0}
   /* log detail modal */
   .log-detail-body{font-size:13px;font-family:var(--font-mono);line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:55dvh;overflow-y:auto;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px}
@@ -4923,7 +4926,7 @@ async function renderLogsTab() {
 async function loadAllLogs() {
   if (_logsLoading) return;
   _logsLoading = true;
-  _setLogsStatus('Loading…');
+  _setLogsStatus('⏳ Loading…');
 
   try {
     const entries = [];
@@ -5221,6 +5224,18 @@ function _filenameToLabel(name) {
 }
 
 function _renderLogNode(node, log) {
+  if (!log.loaded) {
+    // Show skeleton while file is being read
+    node.classList.add('loading');
+    node.innerHTML = `
+      <div class="log-item-header">
+        <span class="log-item-skeleton" style="width:90px"></span>
+        <span class="log-item-skeleton" style="width:120px"></span>
+      </div>
+      <div class="log-item-skeleton" style="width:75%;margin-top:4px"></div>`;
+    return;
+  }
+  node.classList.remove('loading');
   const time = log.dateLabel || _filenameToLabel(log.filename);
   const preview = (log.preview || log.filename).slice(0, 90);
   const tags = log.tags.slice(0, 3).map(t => `<span class="log-item-tag">#${t}</span>`).join('');
