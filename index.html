@@ -4929,11 +4929,25 @@ async function loadAllLogs() {
     const entries = [];
 
     // ── Always read directly from folder — no IDB ──
+    // If handle missing, try to derive from vault first
+    if (!S.logOutputDirHandle && S.vaultDirHandle) {
+      try { await _activateLogOutputHandle(); } catch {}
+    }
     if (S.logOutputDirHandle) {
       try {
         const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
         if (perm === 'granted') {
           await _scanLogDir(S.logOutputDirHandle, '', entries);
+        } else {
+          // Stale handle — re-derive from vault and retry
+          S.logOutputDirHandle = null;
+          if (S.vaultDirHandle) {
+            try { await _activateLogOutputHandle(); } catch {}
+            if (S.logOutputDirHandle) {
+              const perm2 = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
+              if (perm2 === 'granted') await _scanLogDir(S.logOutputDirHandle, '', entries);
+            }
+          }
         }
       } catch(e) { console.warn('Folder log scan failed:', e.message); }
     }
@@ -4943,11 +4957,24 @@ async function loadAllLogs() {
       return;
     }
 
-    // Pre-load all previews so we have ts/dateLabel for sorting
-    await Promise.all(entries.map(e => _loadLogPreview(e).catch(() => {})));
+    // ── Pre-filter by filename date before reading any file content ──
+    // Filenames encode YYYYMMDD or YYYY/MM paths — use this to narrow cheaply
+    const preFiltered = _preFilterByDate(entries);
 
-    entries.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
-    _allLogs = entries;
+    if (!preFiltered.length) {
+      _allLogs = entries; // keep all for filter switching
+      _logsApplyFilter();
+      return;
+    }
+
+    // Only load previews for the pre-filtered set
+    await Promise.all(preFiltered.map(e => _loadLogPreview(e).catch(() => {})));
+
+    // Sort pre-filtered by ts, rest stays unloaded
+    preFiltered.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
+    // Put pre-filtered first, rest after (unloaded, for when filter changes to all/year)
+    const rest = entries.filter(e => !preFiltered.includes(e));
+    _allLogs = [...preFiltered, ...rest];
     _logsApplyFilter();
   } finally {
     _logsLoading = false;
@@ -4967,6 +4994,40 @@ async function _scanLogDir(dirHandle, prefix, out) {
       }
     }
   } catch {}
+}
+
+// Cheaply pre-filter entries by filename/path date — no file reads needed
+function _preFilterByDate(entries) {
+  const now = new Date();
+  const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+  const weekStart  = new Date(now); weekStart.setDate(now.getDate() - ((now.getDay()+6)%7)); weekStart.setHours(0,0,0,0);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const yearStart  = new Date(now.getFullYear(), 0, 1);
+
+  const cutoff = _logsDateFilter === 'today'  ? todayStart
+               : _logsDateFilter === 'week'   ? weekStart
+               : _logsDateFilter === 'month'  ? monthStart
+               : _logsDateFilter === 'year'   ? yearStart
+               : null; // 'all' — no pre-filter
+
+  if (!cutoff) return entries; // all time — return everything
+
+  return entries.filter(e => {
+    // Try YYYYMMDD from filename
+    const m = e.filename.match(/(\d{4})(\d{2})(\d{2})/);
+    if (m) {
+      const fileDate = new Date(+m[1], +m[2]-1, +m[3]);
+      return fileDate >= cutoff;
+    }
+    // Try YYYY/MM path prefix
+    const pm = e.path.match(/^(\d{4})\/(\d{2})\//);
+    if (pm) {
+      const fileDate = new Date(+pm[1], +pm[2]-1, 1);
+      return fileDate >= cutoff;
+    }
+    // Can't determine date from filename — include it (will be filtered after preview load)
+    return true;
+  });
 }
 
 function _logsApplyFilter() {
@@ -5011,6 +5072,17 @@ function _logsApplyFilter() {
   if (_logsSpacerEl) _logsSpacerEl.querySelectorAll('.log-item').forEach(n => n.remove());
   _logsNodes = {};
   _logsRenderedRange = { start: 0, end: 0 };
+
+  // Lazy-load previews for any unloaded entries now in the filtered set
+  const unloaded = _filteredLogs.filter(l => !l.loaded && l.handle);
+  if (unloaded.length) {
+    Promise.all(unloaded.map(l => _loadLogPreview(l).catch(() => {}))).then(() => {
+      // Re-sort and re-render once previews are ready
+      _filteredLogs.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
+      if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
+      requestAnimationFrame(() => _logsVirtualRender(true));
+    });
+  }
 
   _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
   if (_filteredLogs.length === 0) {
