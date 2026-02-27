@@ -5021,7 +5021,8 @@ function _logsApplyFilter() {
   if (emp) emp.remove();
   if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
   if (_logsViewport) _logsViewport.scrollTop = 0;
-  _logsVirtualRender(true);
+  // Defer render until after browser layout so clientHeight is accurate
+  requestAnimationFrame(() => _logsVirtualRender(true));
 }
 
 function _logsSetEmpty(msg) {
