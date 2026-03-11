@@ -603,13 +603,53 @@ const TB_PATHS = [
   ['TimeBlocks'],
   ['0 - Personal Space', 'time blocks'],
 ];
-const VAULT_PATHS = {
+// Mutable — may be overridden by .config/_Vault_Config.md
+let VAULT_PATHS = {
   habitTracker: ['0 - Personal Space', 'Habit Tracker'],
   habitData:    ['0 - Personal Space', 'Habit Tracker', 'Data'],
   logOutput:    ['0 - Personal Space', 'Chrono Log', 'Data'],
   events:       ['0 - Personal Space', 'Events'],
   timeBlocks:   ['0 - Personal Space', 'Time Blocks'],
 };
+
+// Parse a simple YAML frontmatter block (key: "value" or key: value)
+function _parseFrontmatter(text) {
+  const m = text.replace(/\r\n/g,'\n').match(/^---\n([\s\S]+?)\n---/);
+  if (!m) return {};
+  const result = {};
+  for (const line of m[1].split('\n')) {
+    const kv = line.match(/^(\w+):\s*['"]?(.+?)['"]?\s*$/);
+    if (kv) result[kv[1]] = kv[2].trim();
+  }
+  return result;
+}
+
+// Read Vault/.config/_Vault_Config.md and override VAULT_PATHS from it.
+async function loadVaultConfig(vaultHandle) {
+  try {
+    const configDir = await vaultHandle.getDirectoryHandle('.config', { create: false });
+    const fileHandle = await configDir.getFileHandle('_Vault_Config.md', { create: false });
+    const text = await (await fileHandle.getFile()).text();
+    const cfg = _parseFrontmatter(text);
+
+    // Helper: "some/path/parts" -> ['some', 'path', 'parts']
+    const toArr = v => v ? v.replace(/\/+$/, '').split('/') : null;
+
+    if (cfg.logData) VAULT_PATHS.logOutput = toArr(cfg.logData);
+    if (cfg.habitTracker) {
+      const parts = toArr(cfg.habitTracker);
+      // habitData = full path; habitTracker parent = all but last segment
+      VAULT_PATHS.habitData    = parts;
+      VAULT_PATHS.habitTracker = parts.length > 1 ? parts.slice(0, -1) : parts;
+    }
+    if (cfg.timeBlock) VAULT_PATHS.timeBlocks = toArr(cfg.timeBlock);
+
+    console.log('[VaultConfig] Paths updated:', VAULT_PATHS);
+  } catch(e) {
+    // No config file — use defaults (silent)
+    console.log('[VaultConfig] No config found, using defaults.');
+  }
+}
 
 // Navigate (and optionally create) a chain of subdirectories from a root handle.
 async function _navSubDir(root, pathParts, create = true) {
@@ -654,6 +694,7 @@ async function pickVaultFolder() {
     S._sessionPermissionGranted = true;
     await IDB.set('vaultHandle', dh);
     LS.set('vaultFolderName', dh.name);
+    await loadVaultConfig(dh);
     await deriveSubHandles();
     showToast(`📁 ${dh.name} connected`);
     return true;
@@ -698,6 +739,7 @@ async function reconnectVault() {
       S._pendingHandle = null;
       S._sessionPermissionGranted = true;
       document.getElementById('reconnect-area').innerHTML = '';
+      await loadVaultConfig(dh);
       await deriveSubHandles();
       return true;
     }
@@ -6347,6 +6389,7 @@ async function boot() {
   // Attempt to restore vault handle from IndexedDB (optional — habit tracker folder)
   const state = await restoreVaultHandle();
   if (state === 'granted') {
+    await loadVaultConfig(S.vaultDirHandle);
     await deriveSubHandles();
     await loadFromVault();
     renderAll();
