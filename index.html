@@ -5133,6 +5133,40 @@ let _logsRenderedRange = { start: 0, end: 0 };
 let _logsNodes = {};    // index → DOM node (pooled)
 
 let _logsDateFilter = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all'
+let _logsLoadedFilter = null; // tracks what filter range was used for the last full scan
+
+// Returns an ordered list of filter "widths" — used to decide if we need a re-fetch
+const _FILTER_WIDTH = { today: 0, week: 1, month: 2, year: 3, all: 4 };
+
+// Returns {startISO, endISO} (inclusive) for the given filter value
+function _dateRangeForFilter(filter) {
+  const now = new Date();
+  const todayISO = now.toISOString().slice(0, 10);
+  if (filter === 'today') return { startISO: todayISO, endISO: todayISO };
+  if (filter === 'week') {
+    const ws = new Date(now);
+    ws.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    ws.setHours(0, 0, 0, 0);
+    return { startISO: ws.toISOString().slice(0, 10), endISO: todayISO };
+  }
+  if (filter === 'month') {
+    return { startISO: todayISO.slice(0, 7) + '-01', endISO: todayISO };
+  }
+  if (filter === 'year') {
+    return { startISO: now.getFullYear() + '-01-01', endISO: todayISO };
+  }
+  return { startISO: null, endISO: null }; // 'all' — no restriction
+}
+
+// Returns true if a filename likely falls within the given date range (YYYYMMDD prefix match)
+function _filenameInRange(filename, startISO, endISO) {
+  if (!startISO) return true; // no restriction
+  // Try to extract YYYYMMDD from filename
+  const m = filename.match(/(\d{4})(\d{2})(\d{2})/);
+  if (!m) return true; // can't tell — include it
+  const fileDate = m[1] + '-' + m[2] + '-' + m[3];
+  return fileDate >= startISO && fileDate <= endISO;
+}
 
 // ── LOGS POPUP ───────────────────────────────────────────────────────────────
 function showLogsPopup() {
@@ -5175,6 +5209,7 @@ function showLogsPopup() {
   _logsLoading = false;
   _logsSearchQ = '';
   _logsDateFilter = 'today';
+  _logsLoadedFilter = null;
   _allLogs = [];
   _filteredLogs = [];
   _logsNodes = {};
@@ -5188,7 +5223,12 @@ function showLogsPopup() {
     _logsSearchQ = e.target.value.trim().toLowerCase(); _logsApplyFilter();
   });
   ov.querySelector('#lp-date-filter').addEventListener('change', e => {
-    _logsDateFilter = e.target.value; if (S.logOutputDirHandle) _logsApplyFilter();
+    _logsDateFilter = e.target.value;
+    // loadAllLogs handles both cases:
+    // - narrowing range (today from week): uses cached _allLogs, no re-fetch
+    // - widening range (today to week): fetches only the newly needed files
+    if (S.logOutputDirHandle) loadAllLogs();
+    else _logsApplyFilter();
   });
 
   // Clean up when popup closes
@@ -5207,11 +5247,21 @@ async function renderLogsTab() {
 
 async function loadAllLogs() {
   if (_logsLoading) return;
+
+  // If filter narrowed (e.g. week → today), no re-fetch needed — just re-filter cached data
+  const currentWidth = _FILTER_WIDTH[_logsDateFilter] ?? 4;
+  const loadedWidth  = _FILTER_WIDTH[_logsLoadedFilter] ?? -1;
+  if (_logsLoadedFilter !== null && currentWidth <= loadedWidth && _allLogs.length > 0) {
+    _logsApplyFilter();
+    return;
+  }
+
   _logsLoading = true;
   _setLogsStatus('⏳ Loading…');
 
   try {
     const entries = [];
+    const { startISO, endISO } = _dateRangeForFilter(_logsDateFilter);
 
     // ── Always read directly from folder — no IDB ──
     // If handle missing, try to derive from vault first
@@ -5222,7 +5272,7 @@ async function loadAllLogs() {
       try {
         const perm = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
         if (perm === 'granted') {
-          await _scanLogDir(S.logOutputDirHandle, '', entries);
+          await _scanLogDir(S.logOutputDirHandle, '', entries, startISO, endISO);
         } else {
           // Stale handle — re-derive from vault and retry
           S.logOutputDirHandle = null;
@@ -5230,7 +5280,7 @@ async function loadAllLogs() {
             try { await _activateLogOutputHandle(); } catch {}
             if (S.logOutputDirHandle) {
               const perm2 = await S.logOutputDirHandle.requestPermission({ mode: 'readwrite' });
-              if (perm2 === 'granted') await _scanLogDir(S.logOutputDirHandle, '', entries);
+              if (perm2 === 'granted') await _scanLogDir(S.logOutputDirHandle, '', entries, startISO, endISO);
             }
           }
         }
@@ -5242,77 +5292,48 @@ async function loadAllLogs() {
       return;
     }
 
-    // ── Pre-filter by filename date before reading any file content ──
-    // Filenames encode YYYYMMDD or YYYY/MM paths — use this to narrow cheaply
-    const preFiltered = _preFilterByDate(entries);
+    // Load all previews (only reads first 2KB per file — fast)
+    await Promise.all(entries.map(e => _loadLogPreview(e).catch(() => {})));
+    entries.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
 
-    if (!preFiltered.length) {
-      _allLogs = entries; // keep all for filter switching
-      _logsApplyFilter();
-      return;
-    }
+    // Merge with existing cached logs (avoids re-reading files already loaded for narrower range)
+    const existingPaths = new Set(_allLogs.map(l => l.path));
+    const newEntries = entries.filter(e => !existingPaths.has(e.path));
+    _allLogs = [..._allLogs, ...newEntries].sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
 
-    // Only load previews for the pre-filtered set
-    await Promise.all(preFiltered.map(e => _loadLogPreview(e).catch(() => {})));
-
-    // Sort pre-filtered by ts, rest stays unloaded
-    preFiltered.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
-    // Put pre-filtered first, rest after (unloaded, for when filter changes to all/year)
-    const rest = entries.filter(e => !preFiltered.includes(e));
-    _allLogs = [...preFiltered, ...rest];
+    _logsLoadedFilter = _logsDateFilter;
     _logsApplyFilter();
   } finally {
     _logsLoading = false;
   }
 }
 
-// Recursively scan a directory for .md files
-async function _scanLogDir(dirHandle, prefix, out) {
+// Recursively scan a directory for .md files, optionally scoped to a date range.
+// startISO / endISO are YYYY-MM-DD strings (or null for no restriction).
+async function _scanLogDir(dirHandle, prefix, out, startISO = null, endISO = null) {
   try {
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'directory') {
-        await _scanLogDir(entry, prefix ? prefix + '/' + entry.name : entry.name, out);
+        // Prune directories whose names look like a date outside the range
+        // e.g. folder "2024" or "2024-03" — skip if entirely outside range
+        const dirDate = entry.name.match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/);
+        if (dirDate && startISO) {
+          const dirMin = entry.name.replace(/-/g,'').padEnd(8,'0');   // e.g. "20240101"
+          const dirMax = entry.name.replace(/-/g,'').padEnd(8,'9');   // e.g. "20249999"
+          const rangeMin = startISO.replace(/-/g,'');
+          const rangeMax = endISO ? endISO.replace(/-/g,'') : '99999999';
+          if (dirMax < rangeMin || dirMin > rangeMax) continue; // entire folder out of range
+        }
+        await _scanLogDir(entry, prefix ? prefix + '/' + entry.name : entry.name, out, startISO, endISO);
       } else if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+        // Skip files whose date (from filename) is outside the requested range
+        if (!_filenameInRange(entry.name, startISO, endISO)) continue;
         const path = prefix ? prefix + '/' + entry.name : entry.name;
         // Lazy: only read content when item is rendered (store handle for later)
         out.push({ filename: entry.name, path, handle: entry, preview: null, tags: [], loaded: false });
       }
     }
   } catch {}
-}
-
-// Cheaply pre-filter entries by filename/path date — no file reads needed
-function _preFilterByDate(entries) {
-  const now = new Date();
-  const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
-  const weekStart  = new Date(now); weekStart.setDate(now.getDate() - ((now.getDay()+6)%7)); weekStart.setHours(0,0,0,0);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const yearStart  = new Date(now.getFullYear(), 0, 1);
-
-  const cutoff = _logsDateFilter === 'today'  ? todayStart
-               : _logsDateFilter === 'week'   ? weekStart
-               : _logsDateFilter === 'month'  ? monthStart
-               : _logsDateFilter === 'year'   ? yearStart
-               : null; // 'all' — no pre-filter
-
-  if (!cutoff) return entries; // all time — return everything
-
-  return entries.filter(e => {
-    // Try YYYYMMDD from filename
-    const m = e.filename.match(/(\d{4})(\d{2})(\d{2})/);
-    if (m) {
-      const fileDate = new Date(+m[1], +m[2]-1, +m[3]);
-      return fileDate >= cutoff;
-    }
-    // Try YYYY/MM path prefix
-    const pm = e.path.match(/^(\d{4})\/(\d{2})\//);
-    if (pm) {
-      const fileDate = new Date(+pm[1], +pm[2]-1, 1);
-      return fileDate >= cutoff;
-    }
-    // Can't determine date from filename — include it (will be filtered after preview load)
-    return true;
-  });
 }
 
 function _logsApplyFilter() {
@@ -5357,17 +5378,6 @@ function _logsApplyFilter() {
   if (_logsSpacerEl) _logsSpacerEl.querySelectorAll('.log-item').forEach(n => n.remove());
   _logsNodes = {};
   _logsRenderedRange = { start: 0, end: 0 };
-
-  // Lazy-load previews for any unloaded entries now in the filtered set
-  const unloaded = _filteredLogs.filter(l => !l.loaded && l.handle);
-  if (unloaded.length) {
-    Promise.all(unloaded.map(l => _loadLogPreview(l).catch(() => {}))).then(() => {
-      // Re-sort and re-render once previews are ready
-      _filteredLogs.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.filename.localeCompare(a.filename));
-      if (_logsSpacerEl) _logsSpacerEl.style.height = (_filteredLogs.length * LOG_ROW_H) + 'px';
-      requestAnimationFrame(() => _logsVirtualRender(true));
-    });
-  }
 
   _setLogsStatus(`${_filteredLogs.length.toLocaleString()} log${_filteredLogs.length !== 1 ? 's' : ''}`);
   if (_filteredLogs.length === 0) {
@@ -5456,6 +5466,18 @@ async function _loadLogPreview(log) {
     const hashtagM = text.match(/^hashtag:\s*(.+)/m);
     if (hashtagM) {
       log.tags = hashtagM[1].trim().split(/\s+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean);
+    } else {
+      // Fallback: legacy tags: list format
+      const lines = text.split('\n');
+      let inTags = false;
+      for (const line of lines) {
+        if (/^tags:\s*$/.test(line)) { inTags = true; continue; }
+        if (inTags) {
+          const m = line.match(/^\s+-\s+(\S+)/);
+          if (m) { if (m[1] !== 'explore') log.tags.push(m[1]); }
+          else if (line.trim() !== '' && !/^\s/.test(line)) break;
+        }
+      }
     }
     // Extract date/time from frontmatter first; fall back to filename
     const fmDate = text.match(/^date:\s*(\d{4}-\d{2}-\d{2})/m);
@@ -5609,11 +5631,22 @@ function _openLogEditor(log) {
   const logMatch = rawText.match(/^log:\s*(.*)$/m);
   let currentLog = logMatch ? logMatch[1].replace(/^["']|["']$/g, '').trim() : '';
 
-  // Parse hashtag: field (space-separated)
+  // Parse hashtag: field (space-separated), fallback to legacy tags: list
   let currentTags = [];
   const hashtagMatch = rawText.match(/^hashtag:\s*(.+)/m);
   if (hashtagMatch) {
     currentTags = hashtagMatch[1].trim().split(/\s+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean);
+  } else {
+    const rawLines = rawText.split('\n');
+    let inTagBlock = false;
+    for (const line of rawLines) {
+      if (/^tags:\s*$/.test(line)) { inTagBlock = true; continue; }
+      if (inTagBlock) {
+        const m = line.match(/^\s+-\s+(\S+)/);
+        if (m) { if (m[1] !== 'explore') currentTags.push(m[1]); }
+        else if (line.trim() !== '' && !/^\s/.test(line)) break;
+      }
+    }
   }
   // Rebuild into "log text #tag1 #tag2" format for the textarea
   const initialValue = currentLog + (currentTags.length ? ' ' + currentTags.map(t => '#' + t).join(' ') : '');
