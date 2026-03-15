@@ -4746,7 +4746,6 @@ async function writeLogEntry(logText) {
   const subDirs = pathParts.filter(Boolean);
   const id = ts + '_' + Math.random().toString(36).slice(2, 6);
 
-  // ── Save to IDB (always) ──
   const idbEntry = {
     id,
     filename: baseFilename,
@@ -4757,15 +4756,18 @@ async function writeLogEntry(logText) {
     dateLabel: _filenameToLabel(baseFilename),
     ts: now.getTime(),
   };
-  try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB save failed:', e); }
 
-  // ── Write to folder (auto, no picker every time) ──
-  await _writeLogToFolder(idbEntry, newContent, subDirs, baseFilename);
-  return true;
+  // Write to folder first; only commit to IDB if that succeeds
+  const folderOk = await _writeLogToFolder(idbEntry, newContent, subDirs, baseFilename);
+  if (folderOk) {
+    try { await IDBLogs.save(idbEntry); } catch(e) { console.warn('IDB save failed:', e); }
+  }
+  return { idb: folderOk, folder: folderOk };
 }
 
 // Tries to write using the stored dir handle.
 // If it fails or doesn't exist, prompts once to pick the folder, then retries.
+// Returns true if the file was written to the folder, false otherwise.
 async function _writeLogToFolder(idbEntry, content, subDirs, baseFilename) {
   // Activate pending handle if available (requires user gesture — we're in save click chain)
   if (!S.logOutputDirHandle) await _activateLogOutputHandle();
@@ -4773,7 +4775,7 @@ async function _writeLogToFolder(idbEntry, content, subDirs, baseFilename) {
   // Try with existing handle first
   if (S.logOutputDirHandle) {
     const ok = await _tryWriteLog(S.logOutputDirHandle, idbEntry, content, subDirs, baseFilename);
-    if (ok) return;
+    if (ok) return true;
     // Handle went stale — clear and re-derive from vault
     S.logOutputDirHandle = null;
   }
@@ -4783,11 +4785,11 @@ async function _writeLogToFolder(idbEntry, content, subDirs, baseFilename) {
     S.logOutputDirHandle = await _navSubDir(S.vaultDirHandle, VAULT_PATHS.logOutput, true);
     if (S.logOutputDirHandle) {
       const ok = await _tryWriteLog(S.logOutputDirHandle, idbEntry, content, subDirs, baseFilename);
-      if (ok) return;
+      if (ok) return true;
     }
   }
 
-  showToast('⚠ Log folder unavailable — connect vault in Settings');
+  return false;
 }
 
 // Attempts a write with a given dir handle. Returns true on success, false on any error.
@@ -5103,15 +5105,22 @@ function _openLogTextEditor() {
     if (!text) { showToast('Write something first'); return; }
     const btn = ov.querySelector('#log-ok');
     btn.disabled = true; btn.textContent = 'Saving…';
+    let result;
     try {
-      await writeLogEntry(text);
-      _clearDraft();
-      _cachedKnownTags = null; // refresh tag list on next open
+      result = await writeLogEntry(text);
     } catch(e) {
       showToast('⚠ Save error: ' + (e.name || 'error'));
       btn.disabled = false; btn.textContent = '✓ Save Log';
       return;
     }
+    if (result && !result.folder) {
+      // No vault connected — keep draft in localStorage so user doesn't lose text
+      _saveDraft(text);
+      showToast('⚠ Vault is not connected');
+    } else {
+      _clearDraft();
+    }
+    _cachedKnownTags = null;
     close();
   });
 
