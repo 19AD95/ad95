@@ -993,12 +993,26 @@ async function loadHabitDataFromFile() {
           const vaultData = {};
           m[1].split('\n').forEach(line => {
             const lm = line.match(/^(\w+):\s*(.+)/);
-            if (lm) vaultData[lm[1]] = parseInt(lm[2]) || 0;
+            if (!lm) return;
+            const raw = lm[2].trim();
+            if (raw.includes(',')) {
+              vaultData[lm[1]] = raw.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+            } else {
+              const n = parseInt(raw);
+              vaultData[lm[1]] = isNaN(n) ? 0 : n;
+            }
           });
-          // Merge: take the higher value so a just-logged habit never reverts
+          // Merge: for arrays (multi-choice) union the selections; for numbers take higher
           const merged = { ...vaultData };
           for (const k of Object.keys(lsData)) {
-            merged[k] = Math.max(vaultData[k] ?? 0, lsData[k] ?? 0);
+            const vv = vaultData[k], lv = lsData[k];
+            if (Array.isArray(vv) || Array.isArray(lv)) {
+              const va = Array.isArray(vv) ? vv : (vv > 0 ? [vv] : []);
+              const la = Array.isArray(lv) ? lv : (lv > 0 ? [lv] : []);
+              merged[k] = [...new Set([...va, ...la])];
+            } else {
+              merged[k] = Math.max(vv ?? 0, lv ?? 0);
+            }
           }
           S.habitData = merged;
           return;
@@ -1028,7 +1042,7 @@ async function writeHabitData() {
       const keys = Object.keys(S.config.habitDefinitions || {});
       // Snapshot habitData at write time (may have changed while awaiting)
       const snapshot = { ...S.habitData };
-      const yaml = keys.map(k => `${k}: ${snapshot[k] ?? 0}`).join('\n');
+      const yaml = keys.map(k => { const v = snapshot[k]; return `${k}: ${Array.isArray(v) ? (v.length ? v.join(',') : '0') : (v ?? 0)}`; }).join('\n');
       const fh = await dataDir.getFileHandle(fn, { create: true });
       await _writeFileHandle(fh, `---\n${yaml}\n---\n`);
     }
@@ -1216,8 +1230,14 @@ function updateHabit(key, value) {
     S.habitData[key]=Math.min(cfg.maxValue, cur+value);
     showToast(cfg.messages?.[S.habitData[key]]||'Logged!');
   } else {
-    S.habitData[key]=value;
-    showToast(cfg.choices?.find(c=>c.value===value)?.message||'Logged!');
+    // Multi-choice: toggle value in/out of selection array
+    const cur = S.habitData[key];
+    const arr = Array.isArray(cur) ? [...cur] : (cur > 0 ? [cur] : []);
+    const idx = arr.indexOf(value);
+    if (idx >= 0) arr.splice(idx, 1); else arr.push(value);
+    S.habitData[key] = arr;
+    const chosen = arr.map(v => cfg.choices?.find(c=>c.value===v)?.label||String(v)).join(', ');
+    showToast(chosen || 'Cleared');
   }
   writeHabitData();
   renderHabitBars();
@@ -1431,12 +1451,20 @@ function showAlarmModal(idx) {
   let habitBtns = '';
   if (hi) {
     const {key,config:cfg}=hi;
-    if (cfg.type==='incremental') habitBtns=`<button class="btn btn-green aa" data-key="${key}" data-val="${cfg.increment}" style="flex:1">✓ Done</button>`;
-    else habitBtns=cfg.choices.map(c=>`<button class="btn btn-green aa" data-key="${key}" data-val="${c.value}" style="flex:1">${c.label}</button>`).join('');
+    if (cfg.type==='incremental') {
+      habitBtns=`<button class="btn btn-green aa" data-key="${key}" data-val="${cfg.increment}" style="flex:1">✓ Done</button>`;
+    } else {
+      const curRaw = S.habitData[key] ?? 0;
+      const curArr = Array.isArray(curRaw) ? curRaw : (curRaw > 0 ? [curRaw] : []);
+      habitBtns = cfg.choices.map(c => {
+        const sel = curArr.includes(c.value);
+        return `<button class="btn ${sel?'btn-green':'btn-ghost'} aa-choice" data-key="${key}" data-val="${c.value}" style="flex:1;${sel?'outline:2px solid var(--accent)':''}">${c.label}${sel?' ✓':''}</button>`;
+      }).join('');
+    }
   }
   const failOpt=hi?.config?.type==='choice'&&hi?.config?.messages?.failed;
   const dismissBtn=failOpt
-    ?`<button class="btn btn-red ad" data-key="${hi.key}" data-fail="1" style="flex:1">✕ Failed</button>`
+    ?`<button class="btn btn-red ad" data-key="${hi.key}" data-fail="1" style="flex:1">✕ Clear all</button>`
     :`<button class="btn btn-ghost ad" style="flex:1">Dismiss</button>`;
 
   // Badge indicating type
@@ -1450,7 +1478,9 @@ function showAlarmModal(idx) {
     <div style="text-align:center">${typeBadge}</div>
     <div class="alarm-activity">${item.activity}</div>
     <div class="alarm-time">${item.time}</div>
-    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">${habitBtns}${dismissBtn}</div>
+    <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">${habitBtns}</div>
+    ${hi?.config?.type==='choice'?`<div id="alarm-sel-summary" style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-bottom:8px;min-height:14px"></div>`:''}
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">${dismissBtn}</div>
     <div style="display:flex;gap:8px">
       ${snOpts.map(m=>`<button class="btn btn-ghost as" data-idx="${idx}" data-min="${m}" style="flex:1;font-size:12px;min-height:40px;padding:8px">⏰ +${m}m</button>`).join('')}
     </div>
@@ -1458,8 +1488,29 @@ function showAlarmModal(idx) {
   document.body.appendChild(ov);
   const close=()=>{ ov.remove(); renderCountdown(); };
   ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
-  ov.querySelectorAll('.aa').forEach(b=>b.addEventListener('click',()=>{ updateHabit(b.dataset.key,parseInt(b.dataset.val)); S.evaluatedAlarms[idx]=true; close(); }));
-  ov.querySelectorAll('.ad').forEach(b=>b.addEventListener('click',()=>{ if(b.dataset.fail&&b.dataset.key){ updateHabit(b.dataset.key,0); S.evaluatedAlarms[idx]=true; } close(); }));
+  ov.querySelectorAll('.aa').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); updateHabit(b.dataset.key,parseInt(b.dataset.val)); S.evaluatedAlarms[idx]=true; close(); }));
+  ov.querySelectorAll('.aa-choice').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      updateHabit(b.dataset.key, parseInt(b.dataset.val));
+      S.evaluatedAlarms[idx] = true;
+      // Refresh button states in place
+      const k2 = b.dataset.key, cfg2 = S.config?.habitDefinitions?.[k2];
+      const arr2 = Array.isArray(S.habitData[k2]) ? S.habitData[k2] : [];
+      ov.querySelectorAll('.aa-choice').forEach(btn => {
+        const v = parseInt(btn.dataset.val), sel = arr2.includes(v);
+        btn.classList.toggle('btn-green', sel);
+        btn.classList.toggle('btn-ghost', !sel);
+        btn.style.outline = sel ? '2px solid var(--accent)' : '';
+        const sp = btn.querySelector('span');
+        if (sel && !sp) btn.insertAdjacentHTML('beforeend','<span> ✓</span>');
+        if (!sel && sp) sp.remove();
+      });
+      const sumEl = ov.querySelector('#alarm-sel-summary');
+      if (sumEl && cfg2) sumEl.textContent = arr2.length ? arr2.map(v=>cfg2.choices?.find(c=>c.value===v)?.label||v).join(', ') : '';
+    });
+  });
+  ov.querySelectorAll('.ad').forEach(b=>b.addEventListener('click',()=>{ if(b.dataset.fail&&b.dataset.key){ S.habitData[b.dataset.key]=[]; writeHabitData(); renderHabitBars(); S.evaluatedAlarms[idx]=true; } close(); }));
   ov.querySelectorAll('.as').forEach(b=>b.addEventListener('click',()=>{ S.snooze[parseInt(b.dataset.idx)]=Date.now()+parseInt(b.dataset.min)*60000; showToast(`Snoozed ${b.dataset.min}m`); close(); }));
 }
 
@@ -2268,9 +2319,11 @@ function renderHabitBars() {
   const grid = document.createElement('div'); grid.className = 'habits-grid';
 
   for (const [key, cfg] of Object.entries(defs)) {
-    const raw = S.habitData[key] || 0;
-    const dv = cfg.type === 'choice' ? (raw > 0 ? 1 : 0) : raw;
-    const mv = cfg.type === 'choice' ? 1 : (cfg.maxValue || 1);
+    const raw = S.habitData[key] ?? 0;
+    const mv = cfg.type === 'choice' ? (cfg.choices?.length || 1) : (cfg.maxValue || 1);
+    const dv = cfg.type === 'choice'
+      ? (Array.isArray(raw) ? raw.length : (raw > 0 ? 1 : 0))
+      : (typeof raw === 'number' ? raw : 0);
     const complete = dv >= mv, pct = Math.max(2, (dv / mv) * 100);
     const col = document.createElement('div');
     col.className = 'habit-col'; col.dataset.key = key;
@@ -2656,11 +2709,13 @@ function showManualModal(key) {
         <button class="btn btn-red btn-icon" id="mh-dec">−</button>
       </div>`;
   } else {
-    actions=`${isComplete?`<div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-bottom:14px;padding:6px 12px;background:rgba(0,255,136,.08);border-radius:8px">✓ Already completed — tap to change</div>`:''}
-      <div class="btn-row">
-        ${cfg.choices.map(c=>`<button class="btn btn-green mh-ch" data-val="${c.value}" style="${raw===c.value?'outline:2px solid var(--accent)':''}">${c.label}</button>`).join('')}
-        ${cfg.messages?.failed?`<button class="btn btn-red mh-fail">✕ Fail</button>`:''}
-      </div>`;
+    const selArr = Array.isArray(raw) ? raw : (raw > 0 ? [raw] : []);
+    actions=`
+      <div class="btn-row" style="flex-wrap:wrap;gap:8px">
+        ${cfg.choices.map(c=>`<button class="btn ${selArr.includes(c.value)?'btn-green':'btn-ghost'} mh-ch${selArr.includes(c.value)?' mh-sel':''}" data-val="${c.value}" style="flex:1;min-width:calc(50% - 4px);${selArr.includes(c.value)?'outline:2px solid var(--accent)':''}">${c.label}${selArr.includes(c.value)?'<span style="margin-left:6px;font-size:11px">✓</span>':''}</button>`).join('')}
+        ${cfg.messages?.failed?`<button class="btn btn-red mh-fail" style="width:100%">✕ Clear all</button>`:''}
+      </div>
+      <div id="mh-sel-summary" style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-top:10px;min-height:16px">${selArr.length?selArr.map(v=>cfg.choices?.find(c=>c.value===v)?.label||v).join(', '):''}</div>`;
   }
   ov.innerHTML=`<div class="modal">
     <div class="modal-handle"></div>
@@ -2687,8 +2742,33 @@ function showManualModal(key) {
     });
     ov.querySelector('#mh-dec').addEventListener('click',()=>{ decrementHabit(key); document.body.removeChild(ov); });
   } else {
-    ov.querySelectorAll('.mh-ch').forEach(b=>b.addEventListener('click',()=>{ updateHabit(key,parseInt(b.dataset.val)); document.body.removeChild(ov); }));
-    ov.querySelector('.mh-fail')?.addEventListener('click',()=>{ updateHabit(key,0); document.body.removeChild(ov); });
+    // Multi-choice: toggle buttons, stay open, update summary live
+    ov.querySelectorAll('.mh-ch').forEach(b => {
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        updateHabit(key, parseInt(b.dataset.val));
+        // Re-render buttons in place
+        const cur2 = S.habitData[key];
+        const arr2 = Array.isArray(cur2) ? cur2 : (cur2 > 0 ? [cur2] : []);
+        ov.querySelectorAll('.mh-ch').forEach(btn => {
+          const v = parseInt(btn.dataset.val);
+          const sel = arr2.includes(v);
+          btn.classList.toggle('mh-sel', sel);
+          btn.classList.toggle('btn-green', sel);
+          btn.classList.toggle('btn-ghost', !sel);
+          btn.style.outline = sel ? '2px solid var(--accent)' : '';
+          const existing = btn.querySelector('span');
+          if (sel && !existing) btn.insertAdjacentHTML('beforeend','<span style="margin-left:6px;font-size:11px">✓</span>');
+          if (!sel && existing) existing.remove();
+        });
+        const summary = ov.querySelector('#mh-sel-summary');
+        if (summary) summary.textContent = arr2.length ? arr2.map(v=>cfg.choices?.find(c=>c.value===v)?.label||v).join(', ') : '';
+      });
+    });
+    ov.querySelector('.mh-fail')?.addEventListener('click', () => {
+      S.habitData[key] = []; writeHabitData(); renderHabitBars();
+      document.body.removeChild(ov);
+    });
   }
 }
 
