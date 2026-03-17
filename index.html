@@ -431,6 +431,8 @@
 const S = {
   config: null,
   habitData: {},
+  habitTimes: {},    // { key: 'HH:MM AM/PM' } — when last logged
+  habitRemoved: {},  // { key: 'HH:MM AM/PM' } — when last erased (kept as fallback)
   snooze: {},
   shownAlarms: {},
   evaluatedAlarms: {},
@@ -980,7 +982,9 @@ async function loadHabitDataFromFile() {
   // localStorage is always written first on every habit update — treat it as
   // the authoritative source for today.  Vault file may lag behind (async write)
   // so we merge: for each key take whichever value is higher.
-  const lsData = LS.get('habitData_' + todayStr()) || {};
+  const lsData    = LS.get('habitData_'    + todayStr()) || {};
+  const lsTimes   = LS.get('habitTimes_'   + todayStr()) || {};
+  const lsRemoved = LS.get('habitRemoved_' + todayStr()) || {};
 
   if (S.vaultDirHandle) {
     try {
@@ -990,8 +994,12 @@ async function loadHabitDataFromFile() {
         const text = (await (await fh.getFile()).text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         const m = text.match(/^---\n([\s\S]+?)\n---/);
         if (m) {
-          const vaultData = {};
+          const vaultData = {}, vaultTimes = {}, vaultRemoved = {};
           m[1].split('\n').forEach(line => {
+            const rm = line.match(/^(\w+)_removed:\s*(.+)/);
+            if (rm) { vaultRemoved[rm[1]] = rm[2].trim(); return; }
+            const tm = line.match(/^(\w+)_time:\s*(.+)/);
+            if (tm) { vaultTimes[tm[1]] = tm[2].trim(); return; }
             const lm = line.match(/^(\w+):\s*(.+)/);
             if (!lm) return;
             const raw = lm[2].trim();
@@ -1002,7 +1010,7 @@ async function loadHabitDataFromFile() {
               vaultData[lm[1]] = isNaN(n) ? 0 : n;
             }
           });
-          // Merge: for arrays (multi-choice) union the selections; for numbers take higher
+          // Merge values: for arrays union; for numbers take higher
           const merged = { ...vaultData };
           for (const k of Object.keys(lsData)) {
             const vv = vaultData[k], lv = lsData[k];
@@ -1014,13 +1022,18 @@ async function loadHabitDataFromFile() {
               merged[k] = Math.max(vv ?? 0, lv ?? 0);
             }
           }
-          S.habitData = merged;
+          S.habitData    = merged;
+          // Times: prefer localStorage (most recent write) over vault
+          S.habitTimes   = { ...vaultTimes,   ...lsTimes   };
+          S.habitRemoved = { ...vaultRemoved, ...lsRemoved };
           return;
         }
       }
     } catch { /* file doesn't exist yet — created on first write */ }
   }
-  S.habitData = lsData;
+  S.habitData    = lsData;
+  S.habitTimes   = lsTimes;
+  S.habitRemoved = lsRemoved;
 }
 
 let _habitWritePending = false;
@@ -1029,6 +1042,8 @@ let _habitWriteQueued = false;
 async function writeHabitData() {
   // Always save to localStorage immediately — this is instant and never fails
   LS.set('habitData_' + todayStr(), S.habitData);
+  LS.set('habitTimes_'   + todayStr(), S.habitTimes);
+  LS.set('habitRemoved_' + todayStr(), S.habitRemoved);
 
   // Debounce vault writes: if one is already in flight, just flag to re-run after
   if (_habitWritePending) { _habitWriteQueued = true; return; }
@@ -1040,11 +1055,19 @@ async function writeHabitData() {
     if (dataDir) {
       const fn = todayFilename();
       const keys = Object.keys(S.config.habitDefinitions || {});
-      // Snapshot habitData at write time (may have changed while awaiting)
-      const snapshot = { ...S.habitData };
-      const yaml = keys.map(k => { const v = snapshot[k]; return `${k}: ${Array.isArray(v) ? (v.length ? v.join(',') : '0') : (v ?? 0)}`; }).join('\n');
+      // Snapshot at write time
+      const snapshot        = { ...S.habitData };
+      const snapshotTimes   = { ...S.habitTimes };
+      const snapshotRemoved = { ...S.habitRemoved };
+      const lines = [];
+      keys.forEach(k => {
+        const v = snapshot[k];
+        lines.push(`${k}: ${Array.isArray(v) ? (v.length ? v.join(',') : '0') : (v ?? 0)}`);
+        if (snapshotTimes[k])   lines.push(`${k}_time: ${snapshotTimes[k]}`);
+        if (snapshotRemoved[k]) lines.push(`${k}_removed: ${snapshotRemoved[k]}`);
+      });
       const fh = await dataDir.getFileHandle(fn, { create: true });
-      await _writeFileHandle(fh, `---\n${yaml}\n---\n`);
+      await _writeFileHandle(fh, `---\n${lines.join('\n')}\n---\n`);
     }
   } catch(e) {
     console.warn('Vault habit write failed (localStorage used):', e.message);
@@ -1223,11 +1246,33 @@ function parseMd(text) {
 }
 
 // ── HABIT UPDATES ──────────────────────────────────────────────────────────
+function now12h() {
+  const d = new Date();
+  let h = d.getHours(), m = d.getMinutes();
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ap}`;
+}
+
+// Call after every habitData mutation. isEmpty=true → record removed time; false → record logged time.
+// Removed time is kept permanently as a fallback even when re-logged.
+function _trackHabitTime(key, isEmpty) {
+  const t = now12h();
+  if (isEmpty) {
+    delete S.habitTimes[key];
+    S.habitRemoved[key] = t;
+  } else {
+    S.habitTimes[key] = t;
+    // S.habitRemoved[key] intentionally left intact as fallback
+  }
+}
+
 function updateHabit(key, value) {
   const cfg=S.config?.habitDefinitions?.[key]; if (!cfg) return;
   if (cfg.type==='incremental') {
     const cur=S.habitData[key]||0;
     S.habitData[key]=Math.min(cfg.maxValue, cur+value);
+    _trackHabitTime(key, S.habitData[key] === 0);
     showToast(cfg.messages?.[S.habitData[key]]||'Logged!');
   } else {
     // Multi-choice: toggle value in/out of selection array
@@ -1236,6 +1281,7 @@ function updateHabit(key, value) {
     const idx = arr.indexOf(value);
     if (idx >= 0) arr.splice(idx, 1); else arr.push(value);
     S.habitData[key] = arr;
+    _trackHabitTime(key, arr.length === 0);
     const chosen = arr.map(v => cfg.choices?.find(c=>c.value===v)?.label||String(v)).join(', ');
     showToast(chosen || 'Cleared');
   }
@@ -1246,6 +1292,7 @@ function decrementHabit(key) {
   const cfg=S.config?.habitDefinitions?.[key];
   if (!cfg||cfg.type!=='incremental') return;
   S.habitData[key]=Math.max(0,(S.habitData[key]||0)-cfg.increment);
+  _trackHabitTime(key, S.habitData[key] === 0);
   showToast(`${key} → ${S.habitData[key]}`);
   writeHabitData();
   renderHabitBars();
@@ -1510,7 +1557,7 @@ function showAlarmModal(idx) {
       if (sumEl && cfg2) sumEl.textContent = arr2.length ? arr2.map(v=>cfg2.choices?.find(c=>c.value===v)?.label||v).join(', ') : '';
     });
   });
-  ov.querySelectorAll('.ad').forEach(b=>b.addEventListener('click',()=>{ if(b.dataset.fail&&b.dataset.key){ S.habitData[b.dataset.key]=[]; writeHabitData(); renderHabitBars(); S.evaluatedAlarms[idx]=true; } close(); }));
+  ov.querySelectorAll('.ad').forEach(b=>b.addEventListener('click',()=>{ if(b.dataset.fail&&b.dataset.key){ S.habitData[b.dataset.key]=[]; _trackHabitTime(b.dataset.key, true); writeHabitData(); renderHabitBars(); S.evaluatedAlarms[idx]=true; } close(); }));
   ov.querySelectorAll('.as').forEach(b=>b.addEventListener('click',()=>{ S.snooze[parseInt(b.dataset.idx)]=Date.now()+parseInt(b.dataset.min)*60000; showToast(`Snoozed ${b.dataset.min}m`); close(); }));
 }
 
@@ -2719,23 +2766,30 @@ function showManualModal(key) {
   }
   ov.innerHTML=`<div class="modal">
     <div class="modal-handle"></div>
-    <div style="font-size:48px;text-align:center;margin-bottom:16px">${cfg.icon}</div>
+    <div style="font-size:48px;text-align:center;margin-bottom:8px">${cfg.icon}</div>
+    ${(()=>{
+      const t = S.habitTimes[key], r = S.habitRemoved[key];
+      if (t)  return `<div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);text-align:center;margin-bottom:14px;letter-spacing:.5px">Logged ${t}</div>`;
+      if (r)  return `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted);text-align:center;margin-bottom:14px;letter-spacing:.5px">Removed ${r}</div>`;
+      return '<div style="margin-bottom:14px"></div>';
+    })()}
     ${actions}
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) document.body.removeChild(ov); });
   if (isBoolHabit) {
     ov.querySelector('#mh-check').addEventListener('click',()=>{
-      S.habitData[key]=1; writeHabitData(); renderHabitBars(); showToast('✓ Done!'); document.body.removeChild(ov);
+      S.habitData[key]=1; _trackHabitTime(key, false); writeHabitData(); renderHabitBars(); showToast('✓ Done!'); document.body.removeChild(ov);
     });
     ov.querySelector('#mh-cross').addEventListener('click',()=>{
-      S.habitData[key]=0; writeHabitData(); renderHabitBars(); showToast('Cleared'); document.body.removeChild(ov);
+      S.habitData[key]=0; _trackHabitTime(key, true); writeHabitData(); renderHabitBars(); showToast('Cleared'); document.body.removeChild(ov);
     });
   } else if (cfg.type==='incremental') {
     ov.querySelector('#mh-inc').addEventListener('click',()=>{ 
       const cur2 = S.habitData[key]||0;
       if (cur2 >= cfg.maxValue) { showToast(cfg.messages?.maxReached||'Already at max!'); return; }
       S.habitData[key]=Math.min(cfg.maxValue, cur2+(cfg.increment||1));
+      _trackHabitTime(key, S.habitData[key] === 0);
       showToast(cfg.messages?.[S.habitData[key]]||'Logged!');
       writeHabitData(); renderHabitBars();
       document.body.removeChild(ov); 
@@ -2766,7 +2820,7 @@ function showManualModal(key) {
       });
     });
     ov.querySelector('.mh-fail')?.addEventListener('click', () => {
-      S.habitData[key] = []; writeHabitData(); renderHabitBars();
+      S.habitData[key] = []; _trackHabitTime(key, true); writeHabitData(); renderHabitBars();
       document.body.removeChild(ov);
     });
   }
@@ -6632,7 +6686,9 @@ async function boot() {
     if (hasOldFormat) { LS.del('lastConfig'); cached = null; }
   }
   if (cached?.schedule) S.config=cached;
-  S.habitData = LS.get('habitData_' + todayStr()) || {};
+  S.habitData    = LS.get('habitData_'    + todayStr()) || {};
+  S.habitTimes   = LS.get('habitTimes_'   + todayStr()) || {};
+  S.habitRemoved = LS.get('habitRemoved_' + todayStr()) || {};
 
   buildSkeleton();
   // btn-today-sched is created inside buildSkeleton, so wire it after
