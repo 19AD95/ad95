@@ -4814,14 +4814,16 @@ async function writeLogEntry(logText) {
             yamlLines.splice(tagsIdx, ei - tagsIdx);
           }
           yamlLines = yamlLines.filter(l => !l.startsWith('hashtag:'));
-          yamlLines.push(`hashtag: ${finalTags.join(' ')}`);
+          // Write tags as a proper YAML list
+          yamlLines.push('tags:');
+          finalTags.forEach(t => yamlLines.push(`  - ${t}`));
           newContent = open + yamlLines.join('\n') + close + body;
         }
       }
     } catch(e) { console.warn('Template read failed:', e); }
   }
   if (!newContent) {
-    newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\nhashtag: ${finalTags.join(' ')}\n---\n`;
+    newContent = `---\ndate: ${dateStr}\ntime: ${timeStr}\nlog: ${sanitizedLog}\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}\n---\n`;
   }
 
   // ── Generate filename ──
@@ -4940,6 +4942,15 @@ async function _scanDirForHashtags(vaultHandle, set) {
           const text  = await slice.text();
           const fm = text.match(/^---[\r\n]([\s\S]*?)[\r\n]---/);
           if (!fm) continue;
+          // Read tags: list format
+          const tagsBlock = fm[1].match(/^tags:\s*\n((?:\s+-\s+\S+\n?)*)/m);
+          if (tagsBlock) {
+            tagsBlock[1].match(/^\s+-\s+(\S+)/gm)?.forEach(l => {
+              const t = l.replace(/^\s+-\s+/, '').trim();
+              if (t) set.add(t);
+            });
+          }
+          // Also read legacy hashtag: field
           const m = fm[1].match(/^hashtag:\s*(.+)/m);
           if (m) {
             m[1].trim().split(/\s+/)
@@ -4964,6 +4975,10 @@ async function _getKnownTagsAsync() {
     for (const log of logs) {
       if (Array.isArray(log.tags)) log.tags.forEach(t => { if (t && t !== 'explore') set.add(t); });
       if (log.content) {
+        // Read tags: list format
+        const tb = log.content.match(/^tags:\s*\n((?:\s+-\s+\S+\n?)*)/m);
+        if (tb) tb[1].match(/^\s+-\s+(\S+)/gm)?.forEach(l => { const t = l.replace(/^\s+-\s+/,'').trim(); if(t) set.add(t); });
+        // Legacy hashtag: field
         const m = log.content.match(/^hashtag:\s*(.+)/m);
         if (m) m[1].trim().split(/\s+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean).forEach(t => set.add(t));
       }
@@ -5694,25 +5709,32 @@ function _openLogEditor(log) {
   const logMatch = rawText.match(/^log:\s*(.*)$/m);
   let currentLog = logMatch ? logMatch[1].replace(/^["']|["']$/g, '').trim() : '';
 
-  // Parse hashtag: field (space-separated), fallback to legacy tags: list
+  // Parse tags: list (new format), fallback to legacy hashtag: field, then tags: list legacy
   let currentTags = [];
-  const hashtagMatch = rawText.match(/^hashtag:\s*(.+)/m);
-  if (hashtagMatch) {
-    currentTags = hashtagMatch[1].trim().split(/\s+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean);
+  const tagsListMatch = rawText.match(/^tags:\s*\n((?:[ \t]+-[ \t]+\S+[ \t]*\n?)*)/m);
+  if (tagsListMatch) {
+    currentTags = (tagsListMatch[1].match(/^\s+-\s+(\S+)/gm) || [])
+      .map(l => l.replace(/^\s+-\s+/, '').trim()).filter(Boolean);
   } else {
-    const rawLines = rawText.split('\n');
-    let inTagBlock = false;
-    for (const line of rawLines) {
-      if (/^tags:\s*$/.test(line)) { inTagBlock = true; continue; }
-      if (inTagBlock) {
-        const m = line.match(/^\s+-\s+(\S+)/);
-        if (m) { if (m[1] !== 'explore') currentTags.push(m[1]); }
-        else if (line.trim() !== '' && !/^\s/.test(line)) break;
+    const hashtagMatch = rawText.match(/^hashtag:\s*(.+)/m);
+    if (hashtagMatch) {
+      currentTags = hashtagMatch[1].trim().split(/\s+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean);
+    } else {
+      const rawLines = rawText.split('\n');
+      let inTagBlock = false;
+      for (const line of rawLines) {
+        if (/^tags:\s*$/.test(line)) { inTagBlock = true; continue; }
+        if (inTagBlock) {
+          const m = line.match(/^\s+-\s+(\S+)/);
+          if (m) { if (m[1] !== 'explore') currentTags.push(m[1]); }
+          else if (line.trim() !== '' && !/^\s/.test(line)) break;
+        }
       }
     }
   }
-  // Rebuild into "log text #tag1 #tag2" format for the textarea
-  const initialValue = currentLog + (currentTags.length ? ' ' + currentTags.map(t => '#' + t).join(' ') : '');
+  // Show clean log text in textarea; tags show in the preview pills below
+  // (Re-merging them into the field caused hashtags to leak back into the log: YAML field)
+  const initialValue = currentLog;
 
   // ── Extract current date/time from frontmatter, fallback to log.ts ──
   const dateMatch = rawText.match(/^date:\s*(\d{4}-\d{2}-\d{2})/m);
@@ -5763,8 +5785,10 @@ function _openLogEditor(log) {
   ta.value = initialValue;
 
   function updateTagPreview() {
-    const tags = (ta.value.match(/#[\w]+/g) || []);
-    tagPreview.innerHTML = tags.map(t =>
+    const typedTags = (ta.value.match(/#[\w]+/g) || []);
+    // If user hasn't typed any hashtags yet, show the existing saved tags as context
+    const displayTags = typedTags.length ? typedTags : currentTags.map(t => '#' + t);
+    tagPreview.innerHTML = displayTags.map(t =>
       `<span style="background:rgba(0,255,136,.12);border:1px solid rgba(0,255,136,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-family:var(--font-mono);color:var(--accent)">${t}</span>`
     ).join('');
   }
@@ -5819,7 +5843,8 @@ function _openLogEditor(log) {
       // ── Parse new log text + tags from user input ──
       const { tags: newTags, cleaned: newLogText } = extractTagsFromText(inputText);
       const sanitizedLog = sanitizeForYAML(newLogText);
-      const finalTags = newTags.length ? newTags : ['explore'];
+      // If user typed hashtags use those; else keep the original saved tags; else fallback
+      const finalTags = newTags.length ? newTags : (currentTags.length ? currentTags : ['explore']);
 
       // ── Rebuild YAML frontmatter cleanly ──
       // Normalise line endings first
@@ -5849,17 +5874,17 @@ function _openLogEditor(log) {
           yamlLines.splice(ti, end - ti);
         }
         yamlLines = yamlLines.filter(l => !l.startsWith('hashtag:'));
-        // Append updated log + hashtag
+        // Append updated log + tags as proper YAML list
         yamlLines.push(`log: ${sanitizedLog}`);
-        if (finalTags.length) yamlLines.push(`hashtag: ${finalTags.join(' ')}`);
+        if (finalTags.length) { yamlLines.push('tags:'); finalTags.forEach(t => yamlLines.push(`  - ${t}`)); }
 
         const bodyAfterFm = normRaw.slice(fmMatch[0].length);
         newFullText = '---\n' + yamlLines.join('\n') + '\n---' + bodyAfterFm;
       } else {
         // No frontmatter — prepend one
         const timeLineStr = newTimeStr ? `\ntime: ${newTimeStr}` : '';
-        const hashtagLine = finalTags.length ? `\nhashtag: ${finalTags.join(' ')}` : '';
-        newFullText = `---\ndate: ${newDateStr}${timeLineStr}\nlog: ${sanitizedLog}${hashtagLine}\n---\n${normRaw}`;
+        const tagsBlock = finalTags.length ? `\ntags:\n${finalTags.map(t=>`  - ${t}`).join('\n')}` : '';
+        newFullText = `---\ndate: ${newDateStr}${timeLineStr}\nlog: ${sanitizedLog}${tagsBlock}\n---\n${normRaw}`;
       }
 
       // ── Write directly to folder file — no IDB ──
