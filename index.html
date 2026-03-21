@@ -855,8 +855,8 @@ function _expandScheduledEvent(cur) {
                      : times[Math.min(i, times.length - 1)];
 
   if (dates.length === 0) {
-    // No dates — create a floating item (will always show, legacy behaviour)
-    const item = { activity: act, blockType: 'scheduled', repeat: 'daily', _id: baseId, time: getTime(0) };
+    // No dates — item has no valid occurrence; hide it rather than showing every day
+    const item = { activity: act, blockType: 'scheduled', repeat: 'off', _id: baseId, time: getTime(0) };
     if (dur) item.duration = dur;
     return [item];
   }
@@ -895,12 +895,17 @@ async function loadScheduleFromTimeBlocksDir(dir) {
         if (block) {
           let cur = null;
           for (const line of block[1].split('\n')) {
-            const tM = line.match(/^\s*-?\s*time:\s*['"]?(.+?)['"]?\s*$/);
-            const aM = line.match(/^\s+activity:\s*['"]?(.+?)['"]?\s*$/);
-            const dM = line.match(/^\s+duration:\s*(\d+)/);
+            const tM  = line.match(/^\s*-?\s*time:\s*['"]?(.+?)['"]?\s*$/);
+            const aM  = line.match(/^\s+activity:\s*['"]?(.+?)['"]?\s*$/);
+            const dM  = line.match(/^\s+duration:\s*(\d+)/);
+            const dyM = line.match(/^\s+days:\s*['"]?(.+?)['"]?\s*$/);
             if (tM) { if (cur?.activity) schedule.push(cur); cur = { time: tM[1].trim(), blockType: 'routine', repeat: 'daily', _id: genItemId() }; }
-            else if (aM && cur) cur.activity = aM[1].trim();
-            else if (dM && cur) cur.duration = parseInt(dM[1]);
+            else if (aM  && cur) cur.activity = aM[1].trim();
+            else if (dM  && cur) cur.duration = parseInt(dM[1]);
+            else if (dyM && cur) {
+              cur.days = dyM[1].split(',').map(d => d.trim()).filter(Boolean);
+              if (cur.days.length) cur.repeat = 'weekly';
+            }
           }
           if (cur?.activity) schedule.push(cur);
         }
@@ -1316,6 +1321,8 @@ function _getTodaySchedule() {
   const dom = now.getDate();
 
   return all.filter(item => {
+    // Focused work blocks have no scheduled time — never show in the timed schedule
+    if (item.blockType === 'open') return false;
     // Check limit range first
     if (item.limitFrom && todayISO < item.limitFrom) return false;
     if (item.limitTo && todayISO > item.limitTo) return false;
@@ -1325,7 +1332,11 @@ function _getTodaySchedule() {
     if (r === 'off') return false;
     if (r === 'weekly') {
       // item must have a createdOn date — match same weekday
-      if (!item.createdOn) return true; // legacy: always show
+      if (!item.createdOn && !item.days?.length) return false; // no anchor = hide
+      if (item.days?.length) {
+        const DOW_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        return item.days.includes(DOW_NAMES[dow]);
+      }
       const created = new Date(item.createdOn + 'T00:00:00');
       return created.getDay() === dow;
     }
